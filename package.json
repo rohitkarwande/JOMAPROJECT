@@ -1,0 +1,51 @@
+{
+  "name": "joma-scada-nextgen",
+  "version": "1.0.0",
+  "description": "Electron + React Desktop SCADA App for DC Power Supply & Electronic Load Monitoring via RS485 Modbus RTU",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:electron": "tsc --project tsconfig.electron.json",
+    "build:all": "npm run build && npm run build:electron",
+    "dist:exe": "npm run build:all && electron-builder --win nsis portable",
+    "start": "electron .",
+    "app": "npm run build:all && electron .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "lucide-react": "^0.475.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^34.2.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.1"
+  },
+  "build": {
+    "appId": "com.joma.scadanextgen",
+    "productName": "JOMA SCADA Control Center",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    }
+  }
+}
