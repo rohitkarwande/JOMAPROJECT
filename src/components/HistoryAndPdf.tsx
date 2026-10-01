@@ -1,14 +1,108 @@
 import React, { useState } from 'react';
-import { TelemetryPoint, TestSession } from '../types/scada';
+import { formatCurrent, formatVoltage, TelemetryPoint, TestSession } from '../types/scada';
 import { FileText, Download, Eye, Trash2, Calendar } from 'lucide-react';
 import { JomaLogo } from './JomaLogo';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface HistoryAndPdfProps {
   sessions: TestSession[];
   onDeleteSession: (id: string) => void;
   chartContainerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+function getModeSetpointString(session: TestSession): string {
+  if (session.isSequenceTest && session.sequenceStepsConfig && session.sequenceStepsConfig.length > 0) {
+    return session.sequenceStepsConfig
+      .map((s, idx) => {
+        const mode = s.mode || session.mode;
+        const val = (mode.includes('CV') || mode === 'CV') ? `${formatVoltage(s.setpointV ?? session.setpointV)} V` :
+                    (mode.includes('CC') || mode === 'CC') ? `${formatCurrent(s.setpointI ?? session.setpointI)} A` :
+                    (mode.includes('CR') || mode === 'CR') ? `${(s.setpointR ?? session.setpointR ?? 10.0).toFixed(2)} Ω` :
+                    `${(s.setpointP ?? session.setpointP ?? 120.0).toFixed(2)} W`;
+        return `Step ${idx + 1}: ${val}`;
+      })
+      .join(' | ');
+  }
+
+  const mode = String(session.mode).toUpperCase();
+  if (mode.includes('CV')) return `${formatVoltage(session.setpointV)} V`;
+  if (mode.includes('CC')) return `${formatCurrent(session.setpointI)} A`;
+  if (mode.includes('CR')) return `${(session.setpointR || 10.0).toFixed(2)} Ω`;
+  if (mode.includes('CP')) return `${(session.setpointP || 120.0).toFixed(2)} W`;
+  if (mode.includes('BAT')) {
+    if (session.setpointI && session.setpointI > 0) return `${formatCurrent(session.setpointI)} A (Cutoff: ${formatVoltage(session.cutoffV || 0)} V)`;
+    if (session.setpointR && session.setpointR > 0) return `${session.setpointR.toFixed(2)} Ω (Cutoff: ${formatVoltage(session.cutoffV || 0)} V)`;
+    return `Cutoff: ${formatVoltage(session.cutoffV || 0)} V`;
+  }
+  return `${formatVoltage(session.setpointV)} V`;
+}
+
+function getLogSetpoint(session: TestSession, log: TelemetryPoint, logIndex: number): string {
+  if (log.activeSetpoint) {
+    return log.activeSetpoint;
+  }
+
+  if (session.isSequenceTest && session.sequenceStepsConfig && session.sequenceStepsConfig.length > 0) {
+    const steps = session.sequenceStepsConfig;
+    const totalCycleSecs = steps.reduce((sum, s) => sum + (s.totalDurationSeconds || 0), 0);
+    
+    if (totalCycleSecs > 0 && session.logs && session.logs.length > 0) {
+      const startSec = session.logs[0].timeSeconds || 0;
+      const elapsed = Math.max(0, (log.timeSeconds || startSec) - startSec);
+      const cycleElapsed = elapsed % totalCycleSecs;
+
+      let accumulated = 0;
+      for (const step of steps) {
+        accumulated += (step.totalDurationSeconds || 0);
+        if (cycleElapsed < accumulated) {
+          const mode = step.mode || session.mode;
+          if (mode.includes('CV') || mode === 'CV') return `${formatVoltage(step.setpointV ?? session.setpointV)} V`;
+          if (mode.includes('CC') || mode === 'CC') return `${formatCurrent(step.setpointI ?? session.setpointI)} A`;
+          if (mode.includes('CR') || mode === 'CR') return `${(step.setpointR ?? session.setpointR ?? 10.0).toFixed(2)} Ω`;
+          if (mode.includes('CP') || mode === 'CP') return `${(step.setpointP ?? session.setpointP ?? 120.0).toFixed(2)} W`;
+        }
+      }
+    }
+
+    if (session.logs && session.logs.length > 0) {
+      const logRatio = logIndex / Math.max(session.logs.length - 1, 1);
+      const stepIdx = Math.min(steps.length - 1, Math.floor(logRatio * steps.length));
+      const step = steps[stepIdx];
+      if (step) {
+        const mode = step.mode || session.mode;
+        if (mode.includes('CV') || mode === 'CV') return `${formatVoltage(step.setpointV ?? session.setpointV)} V`;
+        if (mode.includes('CC') || mode === 'CC') return `${formatCurrent(step.setpointI ?? session.setpointI)} A`;
+        if (mode.includes('CR') || mode === 'CR') return `${(step.setpointR ?? session.setpointR ?? 10.0).toFixed(2)} Ω`;
+        if (mode.includes('CP') || mode === 'CP') return `${(step.setpointP ?? session.setpointP ?? 120.0).toFixed(2)} W`;
+      }
+    }
+  }
+
+  return getModeSetpointString(session);
+}
+
+function renderJomaLogoDataUrl(): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = 500;
+  canvas.height = 180;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#028bda';
+  ctx.font = '900 110px "Segoe UI", Arial, sans-serif';
+  ctx.fillText('JOMA', 10, 120);
+
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillRect(10, 138, 260, 8);
+  ctx.fillStyle = '#028bda';
+  ctx.fillRect(10, 152, 260, 8);
+
+  ctx.fillStyle = '#475569';
+  ctx.font = 'bold italic 34px "Segoe UI", Arial, sans-serif';
+  ctx.fillText('Next Gen Power', 280, 155);
+
+  return canvas.toDataURL('image/png');
 }
 
 // Offscreen canvas chart generator ensuring every session has a crisp, perfectly scaled V-I trend curve in PDF
@@ -133,12 +227,12 @@ function renderTelemetryChartCanvas(logs: TelemetryPoint[]): string {
   // Voltage Legend
   ctx.fillStyle = '#0284c7';
   ctx.fillRect(margin.left, 18, 22, 12);
-  ctx.fillText(`Voltage (Vmon) - Peak: ${Math.max(...vValues, 0).toFixed(2)}V`, margin.left + 32, 30);
+  ctx.fillText(`Voltage (Vmon) - Peak: ${formatVoltage(Math.max(...vValues, 0))}V`, margin.left + 32, 30);
 
   // Current Legend
   ctx.fillStyle = '#16a34a';
   ctx.fillRect(margin.left + 360, 18, 22, 12);
-  ctx.fillText(`Current (Imon) - Peak: ${Math.max(...iValues, 0).toFixed(2)}A`, margin.left + 392, 30);
+  ctx.fillText(`Current (Imon) - Peak: ${formatCurrent(Math.max(...iValues, 0))}A`, margin.left + 392, 30);
 
   // X-Axis Timestamp Labels
   ctx.fillStyle = '#475569';
@@ -159,8 +253,7 @@ function renderTelemetryChartCanvas(logs: TelemetryPoint[]): string {
 
 export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
   sessions,
-  onDeleteSession,
-  chartContainerRef
+  onDeleteSession
 }) => {
   const [selectedSession, setSelectedSession] = useState<TestSession | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
@@ -181,109 +274,98 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
     const doc = new jsPDF('p', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    // 1. Header Banner
-    doc.setFillColor(9, 13, 20);
-    doc.rect(0, 0, pageWidth, 28, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(6, 182, 212);
-    doc.text('JOMA NEXT GEN POWER - SCADA TEST REPORT', 14, 14);
+    // 1. Top Header Banner with JOMA Logo
+    doc.setFillColor(15, 23, 42); // Dark Navy #0f172a
+    doc.rect(0, 0, pageWidth, 32, 'F');
 
-    doc.setFontSize(9);
-    doc.setTextColor(148, 163, 184);
-    doc.text(`TEST ID: ${session.id}`, 14, 21);
-    doc.text(`DATE: ${session.startTime}`, pageWidth - 60, 21);
-
-    // 2. Test Configuration Table
-    doc.setFontSize(12);
-    doc.setTextColor(15, 23, 42);
-    doc.text('1. TEST CONFIGURATION & MODE METRICS', 14, 38);
-
-    doc.setFontSize(9.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Operation Mode: ${session.mode}`, 14, 46);
-    doc.text(`Target Voltage: ${session.setpointV.toFixed(2)} V`, 14, 52);
-    doc.text(`Target Current: ${session.setpointI.toFixed(2)} A`, 14, 58);
-    doc.text(`Hardware Profile: ${session.deviceProfileName || 'JOMA SCADA Simulator'}`, 14, 64);
-    doc.text(`Duration: ${formatDuration(session.durationSeconds)}`, pageWidth / 2, 46);
-    doc.text(`Status: ${session.status}`, pageWidth / 2, 52);
-    if (session.capacityAh) {
-      doc.text(`Capacity (Ah): ${session.capacityAh.toFixed(3)} Ah`, pageWidth / 2, 58);
+    const logoPng = renderJomaLogoDataUrl();
+    if (logoPng) {
+      doc.addImage(logoPng, 'PNG', 12, 4, 60, 22.5);
     }
 
-    // 3. Performance Summary Table
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('2. PERFORMANCE TELEMETRY SUMMARY', 14, 70);
+    doc.setFontSize(14);
+    doc.setTextColor(56, 189, 248); // Cyan
+    doc.text('TEST REPORT & TELEMETRY SUMMARY', 78, 16);
 
-    // Draw Summary Table Box
-    doc.setFillColor(241, 245, 249);
-    doc.rect(14, 74, pageWidth - 28, 20, 'F');
-    doc.setDrawColor(203, 213, 225);
-    doc.rect(14, 74, pageWidth - 28, 20, 'S');
+    doc.setFontSize(8.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`TEST ID: ${session.id}`, 78, 24);
+    doc.text(`DATE: ${session.startTime}`, pageWidth - 65, 24);
 
+    // 2. Test Configuration Section
+    let currentY = 42;
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold');
+    doc.text('1. TEST CONFIGURATION & MODE PARAMETERS', 14, currentY);
+
+    currentY += 7;
     doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(30, 41, 59);
-    doc.text('Max Voltage', 20, 81);
-    doc.text('Min Voltage', 60, 81);
-    doc.text('Max Current', 100, 81);
-    doc.text('Avg Current', 140, 81);
-    doc.text('Avg Power', 170, 81);
-
     doc.setFont('helvetica', 'normal');
-    doc.text(`${session.maxVoltage.toFixed(2)} V`, 20, 89);
-    doc.text(`${session.minVoltage.toFixed(2)} V`, 60, 89);
-    doc.text(`${session.maxCurrent.toFixed(2)} A`, 100, 89);
-    doc.text(`${session.avgCurrent.toFixed(2)} A`, 140, 89);
-    doc.text(`${session.avgPower.toFixed(2)} W`, 170, 89);
 
-    let currentY = 102;
+    const modeSetpoint = getModeSetpointString(session);
 
-    // 4. Embedded Telemetry Trend Graph (Offscreen Canvas Renderer)
+    doc.text(`Operation Mode: ${session.mode}`, 14, currentY);
+    doc.text(`Mode Setpoint Target: ${modeSetpoint}`, 14, currentY + 6);
+    doc.text(`Hardware Profile: ${session.deviceProfileName || 'JOMA Power Simulator'}`, 14, currentY + 12);
+    doc.text(`Duration: ${formatDuration(session.durationSeconds)}`, pageWidth / 2 + 10, currentY);
+    doc.text(`Status: ${session.status}`, pageWidth / 2 + 10, currentY + 6);
+    if (session.capacityAh) {
+      doc.text(`Capacity (Ah): ${session.capacityAh.toFixed(3)} Ah`, pageWidth / 2 + 10, currentY + 12);
+    }
+
+    currentY += 22;
+
+    // 3. Real-Time Telemetry Trend Graph
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('3. REAL-TIME TELEMETRY GRAPH (V-I TREND)', 14, currentY);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('2. REAL-TIME TELEMETRY GRAPH (V-I TREND)', 14, currentY);
 
     const graphImageData = renderTelemetryChartCanvas(session.logs);
     if (graphImageData) {
-      doc.addImage(graphImageData, 'PNG', 14, currentY + 4, pageWidth - 28, 72);
-      currentY += 83;
+      doc.addImage(graphImageData, 'PNG', 14, currentY + 4, pageWidth - 28, 75);
+      currentY += 86;
     } else {
       currentY += 10;
     }
 
-    // 5. Sample Telemetry Log Table
+    // 4. Timestamped Telemetry Log Table (Power Column Removed, Mode Setpoint Added)
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('4. TIMESTAMPED TELEMETRY LOGS (SAMPLES)', 14, currentY);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('3. TIMESTAMPED TELEMETRY LOGS (SAMPLES)', 14, currentY);
     currentY += 6;
 
     // Table Headers
     doc.setFillColor(226, 232, 240);
     doc.rect(14, currentY, pageWidth - 28, 7, 'F');
     doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
     doc.text('Timestamp', 18, currentY + 5);
-    doc.text('Voltage (Vmon)', 60, currentY + 5);
-    doc.text('Current (Imon)', 110, currentY + 5);
-    doc.text('Power (Pmon)', 160, currentY + 5);
+    doc.text('Mode Setpoint', 68, currentY + 5);
+    doc.text('Voltage (Vmon)', 118, currentY + 5);
+    doc.text('Current (Imon)', 162, currentY + 5);
     currentY += 9;
 
     doc.setFont('helvetica', 'normal');
-    const logsToPrint = session.logs ? session.logs.slice(0, 10) : [];
-    logsToPrint.forEach((log) => {
+    doc.setTextColor(51, 65, 85);
+    const logsToPrint = session.logs ? session.logs.slice(0, 15) : [];
+    logsToPrint.forEach((log, logIdx) => {
       if (currentY > 265) {
         doc.addPage();
         currentY = 20;
       }
       doc.text(log.timestamp, 18, currentY);
-      doc.text(`${log.vmon.toFixed(2)} V`, 60, currentY);
-      doc.text(`${log.imon.toFixed(2)} A`, 110, currentY);
-      doc.text(`${log.pmon.toFixed(2)} W`, 160, currentY);
+      doc.text(getLogSetpoint(session, log, logIdx), 68, currentY);
+      doc.text(`${formatVoltage(log.vmon)} V`, 118, currentY);
+      doc.text(`${formatCurrent(log.imon)} A`, 162, currentY);
       currentY += 6;
     });
 
-    // 6. Operator Signature Block
+    // 5. Operator Signature Block
     const signY = 270;
     doc.setDrawColor(148, 163, 184);
     doc.line(14, signY, 70, signY);
@@ -304,12 +386,12 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
       const { pdf, base64 } = await generatePdfBlob(session);
 
       if (window.electronAPI) {
-        const res = await window.electronAPI.pdf.savePdf(`JOMA_SCADA_Report_${session.id}.pdf`, base64);
+        const res = await window.electronAPI.pdf.savePdf(`JOMA_Report_${session.id}.pdf`, base64);
         if (res.success) {
           alert(`PDF Report saved successfully at:\n${res.filePath}`);
         }
       } else {
-        pdf.save(`JOMA_SCADA_Report_${session.id}.pdf`);
+        pdf.save(`JOMA_Report_${session.id}.pdf`);
       }
     } catch (err: any) {
       alert('Failed to generate PDF: ' + err.message);
@@ -360,8 +442,8 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
                       </span>
                     </td>
                     <td>{formatDuration(s.durationSeconds)}</td>
-                    <td style={{ color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{s.maxVoltage.toFixed(2)} V</td>
-                    <td style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{s.maxCurrent.toFixed(2)} A</td>
+                    <td style={{ color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatVoltage(s.maxVoltage)} V</td>
+                    <td style={{ color: 'var(--accent-green)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{formatCurrent(s.maxCurrent)} A</td>
                     <td>
                       <span style={{
                         padding: '4px 8px',
@@ -437,7 +519,7 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
               <div style={{ borderBottom: '2px solid #0284c7', paddingBottom: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <JomaLogo height={40} />
-                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', fontWeight: 600 }}>SCADA TEST REPORT & TELEMETRY SUMMARY</p>
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '6px', fontWeight: 600 }}>TEST REPORT & TELEMETRY SUMMARY</p>
                 </div>
                 <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
                   <p><strong>TEST ID:</strong> {selectedSession.id}</p>
@@ -448,38 +530,44 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px' }}>
                 <div>
                   <p><strong>Operation Mode:</strong> {selectedSession.mode}</p>
-                  <p><strong>Target Voltage:</strong> {selectedSession.setpointV.toFixed(2)} V</p>
-                  <p><strong>Target Current:</strong> {selectedSession.setpointI.toFixed(2)} A</p>
-                  <p><strong>Hardware Profile:</strong> {selectedSession.deviceProfileName || 'JOMA SCADA Simulator'}</p>
+                  <p><strong>Mode Setpoint:</strong> {getModeSetpointString(selectedSession)}</p>
+                  <p><strong>Hardware Profile:</strong> {selectedSession.deviceProfileName || 'JOMA Power Simulator'}</p>
                 </div>
                 <div>
                   <p><strong>Duration:</strong> {formatDuration(selectedSession.durationSeconds)}</p>
                   <p><strong>Status:</strong> {selectedSession.status}</p>
+                  {selectedSession.isSequenceTest && <p><strong>Configured Cycles:</strong> {selectedSession.sequenceCycles || 1}</p>}
                   {selectedSession.capacityAh && <p><strong>Capacity (Ah):</strong> {selectedSession.capacityAh.toFixed(3)} Ah</p>}
                 </div>
               </div>
 
-              <h4 style={{ marginBottom: '10px', color: '#0f172a' }}>Performance Summary</h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ background: '#e2e8f0' }}>
-                    <th style={{ padding: '8px', border: '1px solid #cbd5e1' }}>Max V</th>
-                    <th style={{ padding: '8px', border: '1px solid #cbd5e1' }}>Min V</th>
-                    <th style={{ padding: '8px', border: '1px solid #cbd5e1' }}>Max I</th>
-                    <th style={{ padding: '8px', border: '1px solid #cbd5e1' }}>Avg I</th>
-                    <th style={{ padding: '8px', border: '1px solid #cbd5e1' }}>Avg P</th>
-                  </tr>
-                </thead>
-                <tbody style={{ textAlign: 'center' }}>
-                  <tr>
-                    <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{selectedSession.maxVoltage.toFixed(2)} V</td>
-                    <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{selectedSession.minVoltage.toFixed(2)} V</td>
-                    <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{selectedSession.maxCurrent.toFixed(2)} A</td>
-                    <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{selectedSession.avgCurrent.toFixed(2)} A</td>
-                    <td style={{ padding: '8px', border: '1px solid #cbd5e1' }}>{selectedSession.avgPower.toFixed(2)} W</td>
-                  </tr>
-                </tbody>
-              </table>
+              {selectedSession.isSequenceTest && selectedSession.sequenceStepsConfig && selectedSession.sequenceStepsConfig.length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <h4 style={{ marginBottom: '8px', color: '#0f172a' }}>Configured Test Sequence Steps</h4>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f1f5f9' }}>
+                        <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Step #</th>
+                        <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Duration</th>
+                        <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Mode</th>
+                        <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Setpoint</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSession.sequenceStepsConfig.map((step, idx) => (
+                        <tr key={idx}>
+                          <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Step {step.stepNumber}</td>
+                          <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{step.totalDurationSeconds}s</td>
+                          <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700 }}>{step.mode}</td>
+                          <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>
+                            {step.mode === 'CV' ? `${step.setpointV} V` : (step.mode === 'CC' ? `${step.setpointI} A` : (step.mode === 'CR' ? `${step.setpointR} Ω` : `${step.setpointP} W`))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <h4 style={{ marginBottom: '10px', color: '#0f172a' }}>Real-Time Telemetry Graph (V-I Trend)</h4>
               <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', marginBottom: '20px', textAlign: 'center', background: '#ffffff' }}>
@@ -489,6 +577,28 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
                   style={{ width: '100%', height: 'auto', borderRadius: '4px', display: 'block' }}
                 />
               </div>
+
+              <h4 style={{ marginBottom: '10px', color: '#0f172a' }}>Timestamped Telemetry Logs (Samples)</h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: '#e2e8f0' }}>
+                    <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Timestamp</th>
+                    <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Mode Setpoint</th>
+                    <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Voltage (Vmon)</th>
+                    <th style={{ padding: '8px', border: '1px solid #cbd5e1', textAlign: 'left' }}>Current (Imon)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedSession.logs ? selectedSession.logs.slice(0, 10) : []).map((log, idx) => (
+                    <tr key={idx}>
+                      <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{log.timestamp}</td>
+                      <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 600 }}>{getLogSetpoint(selectedSession, log, idx)}</td>
+                      <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', color: '#0284c7', fontWeight: 700 }}>{formatVoltage(log.vmon)} V</td>
+                      <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', color: '#16a34a', fontWeight: 700 }}>{formatCurrent(log.imon)} A</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
               <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #94a3b8', paddingTop: '8px', fontSize: '0.8rem', color: '#64748b' }}>
                 <span>OPERATOR SIGNATURE</span>

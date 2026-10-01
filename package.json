@@ -9,7 +9,7 @@
     "build:electron": "tsc --project tsconfig.electron.json",
     "build:all": "npm run build && npm run build:electron",
     "dist:exe": "npm run build:all && electron-builder --win nsis portable",
-    "start": "electron .",
+    "start": "npm run build:all && electron .",
     "app": "npm run build:all && electron .",
     "preview": "vite preview"
   },
@@ -17,6 +17,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.475.0",
+    "modbus-serial": "^8.0.25",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.1"
@@ -33,7 +34,8 @@
   },
   "build": {
     "appId": "com.joma.scadanextgen",
-    "productName": "JOMA SCADA Control Center",
+    "productName": "Joma Next Gen Power",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },

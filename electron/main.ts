@@ -16,7 +16,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: 'JOMA Next Gen Power - SCADA Control Center',
+    title: 'Joma Next Gen Power',
     autoHideMenuBar: true,
     backgroundColor: '#f1f5f9',
     webPreferences: {
@@ -61,7 +61,7 @@ function createWindow() {
         buttons: ['Keep Running (Cancel)', 'Stop Test & Close Application'],
         defaultId: 0,
         cancelId: 0,
-        title: 'Active Test Running - JOMA SCADA',
+        title: 'Active Test Running - JOMA Power',
         message: 'An active hardware test session is currently running!',
         detail: 'Closing the application will automatically disable hardware output. Are you sure you want to stop the test and close?'
       });
@@ -97,6 +97,12 @@ app.whenReady().then(() => {
     }
   });
 
+  modbusService.setSequenceCallback((progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sequence:progress', progress);
+    }
+  });
+
   modbusService.startPolling();
 });
 
@@ -109,12 +115,61 @@ app.on('window-all-closed', () => {
 
 // IPC Handlers
 ipcMain.handle('serial:getPorts', async () => {
-  return [
-    { path: 'COM1', manufacturer: 'System Serial Port' },
-    { path: 'COM3', manufacturer: 'FTDI USB-to-RS485 Converter' },
-    { path: 'COM4', manufacturer: 'CH340 USB-Serial' },
-    { path: '/dev/ttyUSB0', manufacturer: 'Linux RS485 USB Adapter' }
-  ];
+  const portsList: { path: string; manufacturer: string }[] = [];
+  const addedPaths = new Set<string>();
+
+  // Strategy 1: Use node 'serialport' package (native device enumeration)
+  try {
+    const { SerialPort } = require('serialport');
+    const systemPorts = await SerialPort.list();
+    if (Array.isArray(systemPorts)) {
+      systemPorts.forEach((p: any) => {
+        if (p && p.path) {
+          const pathUpper = p.path.toUpperCase();
+          if (!addedPaths.has(pathUpper)) {
+            const mfr = p.friendlyName || (p.manufacturer ? `${p.manufacturer} (${p.path})` : `Serial Port (${p.path})`);
+            portsList.push({ path: p.path, manufacturer: mfr });
+            addedPaths.add(pathUpper);
+          }
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('SerialPort.list() query error:', err);
+  }
+
+  // Strategy 2: PowerShell GetPortNames for Windows OS registry enumeration
+  if (process.platform === 'win32') {
+    try {
+      const output = require('child_process')
+        .execSync('powershell -NoProfile -Command "[System.IO.Ports.SerialPort]::GetPortNames()"')
+        .toString();
+
+      const lines = output.split(/\r?\n/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      lines.forEach((portName: string) => {
+        const pathUpper = portName.toUpperCase();
+        if (!addedPaths.has(pathUpper)) {
+          portsList.push({
+            path: portName,
+            manufacturer: `Hardware COM Port (${portName})`
+          });
+          addedPaths.add(pathUpper);
+        }
+      });
+    } catch (err) {
+      console.warn('PowerShell GetPortNames error:', err);
+    }
+  }
+
+  // Strategy 3: Standard fallback ports list if no hardware ports detected
+  if (portsList.length === 0) {
+    const defaultPorts = ['COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'COM10', '/dev/ttyUSB0', '/dev/ttyACM0'];
+    defaultPorts.forEach((p) => {
+      portsList.push({ path: p, manufacturer: `Default / Manual (${p})` });
+    });
+  }
+
+  return portsList;
 });
 
 ipcMain.handle('modbus:connect', async (_, config) => {
@@ -143,6 +198,41 @@ ipcMain.handle('modbus:setOutput', async (_, state) => {
   return modbusService.setOutput(state);
 });
 
+ipcMain.handle('modbus:resetBatTest', async () => {
+  return modbusService.resetBatTest();
+});
+
+ipcMain.handle('modbus:triggerSimAlarm', async (_, type) => {
+  modbusService.triggerSimAlarm(type);
+  return true;
+});
+
+ipcMain.handle('modbus:clearAlarmCoil', async (_, coilIndex) => {
+  return modbusService.clearAlarmCoil(coilIndex);
+});
+
+// Automated Test Sequence IPC Handlers
+ipcMain.handle('sequence:start', async (_, config) => {
+  return modbusService.startSequence(config);
+});
+
+ipcMain.handle('sequence:pause', async () => {
+  return modbusService.pauseSequence();
+});
+
+ipcMain.handle('sequence:resume', async () => {
+  return modbusService.resumeSequence();
+});
+
+ipcMain.handle('sequence:stop', async () => {
+  return modbusService.stopSequence('STOPPED');
+});
+
+ipcMain.handle('sequence:getProgress', async () => {
+  return modbusService.getSequenceProgress();
+});
+
+// Database Sessions & Presets IPC Handlers
 ipcMain.handle('db:getSessions', async () => {
   return dbService.getSessions();
 });
@@ -153,6 +243,18 @@ ipcMain.handle('db:saveSession', async (_, session) => {
 
 ipcMain.handle('db:deleteSession', async (_, id) => {
   return dbService.deleteSession(id);
+});
+
+ipcMain.handle('db:getPresets', async () => {
+  return dbService.getPresets();
+});
+
+ipcMain.handle('db:savePreset', async (_, preset) => {
+  return dbService.savePreset(preset);
+});
+
+ipcMain.handle('db:deletePreset', async (_, id) => {
+  return dbService.deletePreset(id);
 });
 
 ipcMain.handle('pdf:savePdf', async (_, { filename, pdfBase64 }) => {

@@ -62,68 +62,39 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
           boxShadow: '0 10px 40px rgba(0, 0, 0, 0.6)'
         }}
       >
-        {/* Header Bar matching Image */}
+        {/* Header Bar */}
         <div
           style={{
-            background: 'linear-gradient(90deg, #ffffff 0%, #3b82f6 50%, #1e40af 100%)',
-            padding: '12px 24px',
+            background: 'linear-gradient(90deg, #1e40af 0%, #3b82f6 50%, #1e40af 100%)',
+            padding: '16px 24px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
             borderBottom: '2px solid #1e3a8a'
           }}
         >
-          {/* Brand Logo Box */}
-          <div
-            style={{
-              background: '#ffffff',
-              padding: '6px 14px',
-              borderRadius: '4px',
-              border: '1px solid #cbd5e1',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <JomaLogo height={42} />
-          </div>
-
           {/* Title Banner */}
           <div
             style={{
               fontFamily: "'Times New Roman', serif",
               fontWeight: 700,
               fontSize: '2.2rem',
-              color: '#0f172a',
+              color: '#ffffff',
               letterSpacing: '2px',
-              textShadow: '0 1px 2px rgba(255,255,255,0.8)'
+              textShadow: '0 2px 4px rgba(0,0,0,0.4)'
             }}
           >
-            ENG SETTING
-          </div>
-
-          {/* Live Date / Time */}
-          <div
-            style={{
-              fontFamily: "'Times New Roman', serif",
-              fontWeight: 700,
-              fontSize: '1.4rem',
-              color: '#0f172a',
-              textAlign: 'right',
-              lineHeight: 1.2
-            }}
-          >
-            <div>{timeStr}</div>
-            <div>{dateStr}</div>
+            ENGINEERING SETTINGS & LOGGING CONFIGURATION
           </div>
         </div>
 
-        {/* 2x2 Retro LED Numeric Input Grid matching Image */}
+        {/* Retro LED Numeric Input Grid */}
         <div
           style={{
-            padding: '48px 36px',
+            padding: '40px 36px',
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
-            gap: '40px 48px',
+            gap: '32px 48px',
             background: '#f8fafc'
           }}
         >
@@ -151,7 +122,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
             >
               <input
                 type="number"
-                step="0.1"
+                step="0.001"
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -164,7 +135,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.vmax}
-                onChange={(e) => handleChange('vmax', parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handleChange('vmax', val === '' ? 0 : (parseFloat(val) || 0));
+                }}
               />
             </div>
           </div>
@@ -193,7 +167,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
             >
               <input
                 type="number"
-                step="0.1"
+                step="0.001"
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -206,7 +180,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.pmax}
-                onChange={(e) => handleChange('pmax', parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handleChange('pmax', val === '' ? 0 : (parseFloat(val) || 0));
+                }}
               />
             </div>
           </div>
@@ -235,7 +212,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
             >
               <input
                 type="number"
-                step="0.1"
+                step="0.001"
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -248,7 +225,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.imax}
-                onChange={(e) => handleChange('imax', parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handleChange('imax', val === '' ? 0 : (parseFloat(val) || 0));
+                }}
               />
             </div>
           </div>
@@ -277,7 +257,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
             >
               <input
                 type="number"
-                step="0.1"
+                step="0.001"
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -290,7 +270,71 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.rmax}
-                onChange={(e) => handleChange('rmax', parseFloat(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handleChange('rmax', val === '' ? 0 : (parseFloat(val) || 0));
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Log Interval Row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', gridColumn: 'span 2', background: '#ecfdf5', padding: '16px 20px', borderRadius: '8px', border: '1.5px solid #10b981' }}>
+            <span
+              style={{
+                fontFamily: "'Times New Roman', serif",
+                fontWeight: 700,
+                fontSize: '1.8rem',
+                minWidth: '320px',
+                color: '#064e3b'
+              }}
+            >
+              Log Interval (mins) :
+            </span>
+            <div
+              style={{
+                flex: 1,
+                background: '#000000',
+                borderRadius: '4px',
+                padding: '12px 20px',
+                boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
+              }}
+            >
+              <input
+                type="number"
+                min={0.001}
+                step="0.001"
+                style={{
+                  width: '100%',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#4ade80',
+                  fontFamily: "'Times New Roman', serif",
+                  fontSize: '2.4rem',
+                  fontWeight: 700,
+                  textAlign: 'center',
+                  outline: 'none'
+                }}
+                value={localEng.logIntervalMinutes ?? (localEng.logIntervalSeconds ? +(localEng.logIntervalSeconds / 60).toFixed(3) : 1)}
+                onChange={(e) => {
+                  const valStr = e.target.value;
+                  if (valStr === '') {
+                    setLocalEng((prev) => ({
+                      ...prev,
+                      logIntervalMinutes: 0,
+                      logIntervalSeconds: 0
+                    }));
+                  } else {
+                    const mins = parseFloat(valStr);
+                    if (!isNaN(mins)) {
+                      setLocalEng((prev) => ({
+                        ...prev,
+                        logIntervalMinutes: mins,
+                        logIntervalSeconds: Math.max(0.1, parseFloat((mins * 60).toFixed(3)))
+                      }));
+                    }
+                  }
+                }}
               />
             </div>
           </div>
@@ -309,7 +353,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569', fontSize: '0.85rem', fontWeight: 600 }}>
             <ShieldAlert size={18} style={{ color: '#0284c7' }} />
-            <span>Note: These values specify global safety cutoff thresholds applicable across all 5 operation modes.</span>
+            <span>Note: Vmax, Imax, Pmax & Rmax set safety cutoff limits. Log Interval specifies the universal data sampling frequency for all modes & PDF reports.</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

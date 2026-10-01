@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { TelemetryPoint, OperationMode } from '../types/scada';
+import { TelemetryPoint, OperationMode, SetpointValues } from '../types/scada';
 import { LineChart as ChartIcon, Pause, Play, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface LiveChartProps {
   data: TelemetryPoint[];
-  onClearData: () => void;
+  onClearData?: () => void;
   chartRef?: React.RefObject<HTMLDivElement | null>;
   currentMode?: OperationMode;
   batTestSubMode?: 'CC' | 'CR';
+  setpoints?: SetpointValues;
 }
 
 export const LiveChart: React.FC<LiveChartProps> = ({
   data,
-  onClearData,
+  onClearData = () => {},
   chartRef,
   currentMode = 'CV',
-  batTestSubMode = 'CC'
+  batTestSubMode = 'CC',
+  setpoints
 }) => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [magnifyFluctuations, setMagnifyFluctuations] = useState<boolean>(true);
@@ -24,7 +26,28 @@ export const LiveChart: React.FC<LiveChartProps> = ({
   const modeLabel = currentMode === 'BAT TEST' ? `BAT TEST (${batTestSubMode} MODE)` : `${currentMode} MODE`;
 
   // Take the last 60 data points when streaming
-  const displayData = isPaused ? data : data.slice(-60);
+  const rawData = isPaused ? data : data.slice(-60);
+
+  const setpointLegendName = currentMode === 'CC' ? 'CC Setpoint'
+    : currentMode === 'CR' ? 'CR Setpoint'
+    : currentMode === 'CP' ? 'CP Setpoint'
+    : currentMode === 'BAT TEST' ? 'Bat Cutoff V'
+    : 'CV Setpoint';
+
+  const chartData = rawData.map((pt) => {
+    let sp = pt.setpointValue;
+    if (sp === undefined && setpoints) {
+      if (currentMode === 'CC') sp = setpoints.iset;
+      else if (currentMode === 'CR') sp = setpoints.rset;
+      else if (currentMode === 'CP') sp = setpoints.pset;
+      else if (currentMode === 'BAT TEST') sp = setpoints.cutoffV;
+      else sp = setpoints.cv;
+    }
+    return {
+      ...pt,
+      setpointValue: sp
+    };
+  });
 
   return (
     <div className="main-chart-area" ref={chartRef}>
@@ -93,7 +116,7 @@ export const LiveChart: React.FC<LiveChartProps> = ({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={displayData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
+            <LineChart data={chartData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
                 dataKey="timestamp"
@@ -156,6 +179,18 @@ export const LiveChart: React.FC<LiveChartProps> = ({
                 strokeWidth={2.5}
                 dot={false}
                 activeDot={{ r: 5 }}
+                isAnimationActive={false}
+              />
+              <Line
+                yAxisId={currentMode === 'CC' ? 'right' : 'left'}
+                type="monotone"
+                dataKey="setpointValue"
+                name={`Setpoint (Red - ${setpointLegendName})`}
+                stroke="#dc2626"
+                strokeWidth={2.5}
+                strokeDasharray="4 4"
+                dot={false}
+                activeDot={{ r: 6, fill: '#dc2626' }}
                 isAnimationActive={false}
               />
             </LineChart>

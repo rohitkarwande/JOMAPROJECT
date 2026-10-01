@@ -7,18 +7,20 @@ interface HeaderProps {
   activeMode: OperationMode;
   batTestSubMode?: 'CC' | 'CR';
   connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR';
-  activeTab: 'dashboard' | 'history' | 'settings' | 'engSettings';
+  activeTab: 'dashboard' | 'sequence' | 'history' | 'settings' | 'engSettings';
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeMode,
   batTestSubMode = 'CC',
   connectionStatus,
+  activeTab,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
 
   const modeLabel = activeMode === 'BAT TEST' ? `BAT TEST (${batTestSubMode} MODE)` : `${activeMode} MODE`;
+  const isEngSettings = activeTab === 'engSettings';
 
   useEffect(() => {
     const updateTime = () => {
@@ -39,37 +41,31 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="header-bar">
       <div className="brand-section">
-        <div className="logo-badge" style={{ background: '#ffffff', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '6px' }}>
-          <JomaLogo height={30} />
-        </div>
-        <div className="active-mode-tag">
-          {modeLabel}
-        </div>
+        {!isEngSettings && (
+          <div className="logo-badge" style={{ background: '#ffffff', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '6px' }}>
+            <JomaLogo height={30} />
+          </div>
+        )}
       </div>
 
-      <div className="header-center">
-        <Clock size={16} className="text-cyan-400" />
-        <span>{timeStr}</span>
-        <span style={{ opacity: 0.4 }}>|</span>
-        <span>{dateStr}</span>
-      </div>
+      {!isEngSettings && (
+        <div className="header-center">
+          <Clock size={16} className="text-cyan-400" />
+          <span>{timeStr}</span>
+          <span style={{ opacity: 0.4 }}>|</span>
+          <span>{dateStr}</span>
+        </div>
+      )}
 
       <div className="header-right">
-        <div className={`status-badge ${connectionStatus.toLowerCase()}`}>
+        <div className={`status-badge ${connectionStatus === 'CONNECTED' ? 'connected' : 'disconnected'}`}>
           <div className="status-dot"></div>
-          {connectionStatus === 'SIMULATOR' && (
-            <>
-              <Cpu size={14} />
-              <span>SIMULATOR MODE</span>
-            </>
-          )}
-          {connectionStatus === 'CONNECTED' && (
+          {connectionStatus === 'CONNECTED' ? (
             <>
               <Activity size={14} />
               <span>CONNECTED (RS485)</span>
             </>
-          )}
-          {connectionStatus === 'DISCONNECTED' && (
+          ) : (
             <span>DISCONNECTED</span>
           )}
         </div>

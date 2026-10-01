@@ -1,4 +1,4 @@
-import { ConnectionSettings, EngineeringSettings, OperationMode, SetpointValues, TelemetryPoint, TestSession } from './scada';
+import { ConnectionSettings, EngineeringSettings, OperationMode, SequenceConfig, SequencePreset, SequenceProgress, SetpointValues, TelemetryPoint, TestSession } from './scada';
 
 export interface CommandResult {
   success: boolean;
@@ -16,13 +16,27 @@ export interface ElectronAPI {
     writeSetpoints: (setpoints: Partial<SetpointValues>) => Promise<CommandResult | boolean>;
     writeEngSettings: (engSettings: EngineeringSettings) => Promise<CommandResult | boolean>;
     setOutput: (state: boolean) => Promise<CommandResult | boolean>;
+    resetBatTest: () => Promise<CommandResult | boolean>;
+    triggerSimAlarm: (type: 'power' | 'volt') => Promise<CommandResult | boolean>;
+    clearAlarmCoil: (coilIndex: number) => Promise<CommandResult | boolean>;
     onTelemetry: (callback: (data: TelemetryPoint) => void) => () => void;
     onStatusChange: (callback: (status: 'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR') => void) => () => void;
+  };
+  sequence: {
+    start: (config: SequenceConfig) => Promise<CommandResult>;
+    pause: () => Promise<CommandResult>;
+    resume: () => Promise<CommandResult>;
+    stop: () => Promise<CommandResult>;
+    getProgress: () => Promise<SequenceProgress>;
+    onProgress: (callback: (progress: SequenceProgress) => void) => () => void;
   };
   db: {
     getSessions: () => Promise<TestSession[]>;
     saveSession: (session: TestSession) => Promise<boolean>;
     deleteSession: (id: string) => Promise<boolean>;
+    getPresets: () => Promise<SequencePreset[]>;
+    savePreset: (preset: SequencePreset) => Promise<boolean>;
+    deletePreset: (id: string) => Promise<boolean>;
   };
   pdf: {
     savePdf: (filename: string, pdfBufferBase64: string) => Promise<{ success: boolean; filePath?: string }>;

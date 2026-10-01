@@ -1,12 +1,14 @@
 import React from 'react';
 import { OperationMode } from '../types/scada';
-import { LayoutDashboard, FileText, Settings, ShieldAlert, BatteryCharging, Zap, RefreshCw, Cpu, Lock } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, ShieldAlert, BatteryCharging, Zap, RefreshCw, Cpu, Lock, ListChecks } from 'lucide-react';
+
+export type ActiveViewType = 'dashboard' | 'sequence' | 'history' | 'settings' | 'engSettings';
 
 interface NavigationTabsProps {
   currentMode: OperationMode;
   onSelectMode: (mode: OperationMode) => void;
-  activeView: 'dashboard' | 'history' | 'settings' | 'engSettings';
-  onSelectView: (view: 'dashboard' | 'history' | 'settings' | 'engSettings') => void;
+  activeView: ActiveViewType;
+  onSelectView: (view: ActiveViewType) => void;
   isTestRunning?: boolean;
 }
 
@@ -34,6 +36,14 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
       >
         <LayoutDashboard size={18} />
         <span>Control Dashboard</span>
+      </button>
+
+      <button
+        className={`btn-nav-tab ${activeView === 'sequence' ? 'active' : ''}`}
+        onClick={() => onSelectView('sequence')}
+      >
+        <ListChecks size={18} />
+        <span>Test Sequence</span>
       </button>
 
       <button
