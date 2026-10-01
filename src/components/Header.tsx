@@ -6,7 +6,7 @@ import { JomaLogo } from './JomaLogo';
 interface HeaderProps {
   activeMode: OperationMode;
   batTestSubMode?: 'CC' | 'CR';
-  connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR';
+  connectionStatus: 'CONNECTED' | 'DISCONNECTED';
   activeTab: 'dashboard' | 'sequence' | 'history' | 'settings' | 'engSettings';
 }
 
@@ -66,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>CONNECTED (RS485)</span>
             </>
           ) : (
-            <span>DISCONNECTED</span>
+            <span>DISCONNECTED (RS485)</span>
           )}
         </div>
       </div>

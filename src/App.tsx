@@ -16,7 +16,7 @@ export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveViewType>('dashboard');
   const [currentMode, setCurrentMode] = useState<OperationMode>('CV');
   const [outputState, setOutputState] = useState<boolean>(false);
-  const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR'>('SIMULATOR');
+  const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
 
   const [sequenceProgress, setSequenceProgress] = useState<SequenceProgress>({
     state: 'IDLE',
@@ -71,11 +71,12 @@ export const App: React.FC = () => {
     pollingIntervalMs: 500,
     isSimulator: false,
     selectedProfileId: 'CLIENT_CSV_PROFILE',
-    registers: BUILTIN_PROFILES[0].registers
+    registers: BUILTIN_PROFILES[0].registers,
+    wordSwap: true
   });
 
   const activeProfile = BUILTIN_PROFILES.find((p) => p.id === settings.selectedProfileId) || BUILTIN_PROFILES[0];
-  const isAuthorized = settings.isSimulator || activeProfile.validationStatus === 'SIMULATOR_TESTED' || activeProfile.validationStatus === 'HARDWARE_VALIDATED';
+  const isAuthorized = activeProfile.validationStatus === 'HARDWARE_VALIDATED' || activeProfile.validationStatus === 'SIMULATOR_TESTED';
 
   const [telemetry, setTelemetry] = useState<TelemetryPoint>({
     timestamp: '00:00:00',
@@ -113,6 +114,7 @@ export const App: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const currentSessionLogsRef = useRef<TelemetryPoint[]>([]);
+  const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load Sessions from Database on Mount
   useEffect(() => {
@@ -153,6 +155,42 @@ export const App: React.FC = () => {
         // HMI is final call: Automatically sync mode if changed on physical HMI
         if (point.hardwareMode) {
           setCurrentMode((prev) => (point.hardwareMode && point.hardwareMode !== prev ? point.hardwareMode : prev));
+        }
+
+        // In CV or CR mode, sync I LIMIT set on physical HMI into app setpoints state
+        if (point.hardwareIlimit !== undefined && point.hardwareIlimit >= 0) {
+          setSetpoints((prev) => {
+            if (prev.iset !== point.hardwareIlimit) {
+              return { ...prev, iset: point.hardwareIlimit! };
+            }
+            return prev;
+          });
+        }
+
+        // 2-way HMI synchronization: If Output ON/OFF changed on physical hardware panel, reflect in app!
+        if (point.isOutputOn !== undefined) {
+          const hwOn = Boolean(point.isOutputOn);
+          setOutputState((prev) => {
+            if (prev !== hwOn) {
+              setOutputConfirmedState(hwOn ? 'ON' : 'OFF');
+              if (hwOn) {
+                if (!timerRef.current) {
+                  setElapsedTimeSeconds(0);
+                  currentSessionLogsRef.current = [];
+                  timerRef.current = setInterval(() => {
+                    setElapsedTimeSeconds((t) => t + 1);
+                  }, 1000);
+                }
+              } else {
+                if (timerRef.current) {
+                  clearInterval(timerRef.current);
+                  timerRef.current = null;
+                }
+              }
+              return hwOn;
+            }
+            return prev;
+          });
         }
 
         // Stream points into telemetry history graph when output is ON or point has active telemetry
@@ -377,12 +415,55 @@ export const App: React.FC = () => {
     }
   };
 
-  // Setpoint Update Handler
+  // Setpoint Update Handler - Triggered on ENTER key or SET/ENTER button click
   const handleUpdateSetpoint = async (key: keyof SetpointValues, val: number) => {
+    // Safety 1: I_SET_RANGE_CC (imax) cannot be set from PC (monitored from physical HMI only)
+    if (key === 'imax') {
+      console.warn('I_SET_RANGE_CC cannot be set from PC app (monitored from HMI only)');
+      return;
+    }
+
+    // Safety 2: In CV mode, I Limit cannot be set from PC (monitored from physical HMI)
+    if (currentMode === 'CV' && key === 'iset') {
+      console.warn('I Limit cannot be set in CV mode (monitored from HMI)');
+      return;
+    }
+
+    // Safety 3: I Target cannot exceed I_SET_RANGE_CC limit
+    if (key === 'iset' && setpoints.imax > 0 && val > setpoints.imax) {
+      alert(`⚠️ Safety Limit Warning: I Target (${val} A) exceeds I_SET_RANGE_CC limit (${setpoints.imax.toFixed(3)} A)!`);
+      return;
+    }
+
+    // Safety 4: Resistance cannot exceed R_MAX limit
+    if (key === 'rset' && engSettings.rmax > 0 && val > engSettings.rmax) {
+      alert(`⚠️ Safety Limit Warning: Resistance (${val} Ω) exceeds R_MAX limit (${engSettings.rmax.toFixed(2)} Ω)!`);
+      return;
+    }
+
+    // Safety 5: Cutoff Voltage cannot exceed V_MAX limit
+    if (key === 'cutoffV' && engSettings.vmax > 0 && val > engSettings.vmax) {
+      alert(`⚠️ Safety Limit Warning: Cutoff Voltage (${val} V) exceeds V_MAX limit (${engSettings.vmax.toFixed(2)} V)!`);
+      return;
+    }
+
+    // Safety 6: Power cannot exceed P_MAX limit
+    if (key === 'pset' && engSettings.pmax > 0 && val > engSettings.pmax) {
+      alert(`⚠️ Safety Limit Warning: Power (${val} W) exceeds P_MAX limit (${engSettings.pmax.toFixed(1)} W)!`);
+      return;
+    }
+
     const updated = { ...setpoints, [key]: val };
     setSetpoints(updated);
-    if (window.electronAPI) {
-      await window.electronAPI.modbus.writeSetpoints(updated);
+
+    if (connectionStatus === 'CONNECTED' && window.electronAPI) {
+      try {
+        console.log(`[Setpoint Write] Writing ${key} = ${val} to RS485...`);
+        // Crucial: Only pass the specific changed setpoint so Modbus writes only that register!
+        await window.electronAPI.modbus.writeSetpoints({ [key]: val });
+      } catch (e) {
+        console.warn('RS485 write setpoint error:', e);
+      }
     }
   };
 
@@ -399,6 +480,16 @@ export const App: React.FC = () => {
     if (state && !isAuthorized) {
       alert(`HARDWARE VALIDATION RESTRICTION: Physical hardware has not been tested for device profile "${activeProfile.name}". Output control is strictly disabled.`);
       return;
+    }
+
+    if (!state) {
+      // User clicked OUTPUT OFF:
+      // Immediately reset live telemetry display to 0.00 V / 0.00 A to suppress floating sensor noise
+      const timeStr = new Date().toTimeString().split(' ')[0];
+      const timeSec = Math.floor(Date.now() / 1000);
+      const zeroPt: TelemetryPoint = { timestamp: timeStr, timeSeconds: timeSec, vmon: 0.00, imon: 0.00, pmon: 0.00, isOutputOn: false };
+      setTelemetry(zeroPt);
+      setTelemetryHistory([zeroPt]);
     }
 
     if (window.electronAPI) {
@@ -485,14 +576,24 @@ export const App: React.FC = () => {
     }
   };
 
-  // Save Settings
-  const handleSaveSettings = async (newSettings: ConnectionSettings) => {
+  // Save Settings & Connect
+  const handleSaveSettings = async (newSettings: ConnectionSettings): Promise<boolean> => {
     setSettings(newSettings);
     if (window.electronAPI) {
-      await window.electronAPI.modbus.connect(newSettings);
+      const res = await window.electronAPI.modbus.connect(newSettings);
+      return typeof res === 'boolean' ? res : (res?.success ?? false);
     } else {
-      setConnectionStatus(newSettings.isSimulator ? 'SIMULATOR' : 'CONNECTED');
+      setConnectionStatus('CONNECTED');
+      return true;
     }
+  };
+
+  // Disconnect from Hardware
+  const handleDisconnect = async () => {
+    if (window.electronAPI) {
+      await window.electronAPI.modbus.disconnect();
+    }
+    setConnectionStatus('DISCONNECTED');
   };
 
   return (
@@ -600,6 +701,7 @@ export const App: React.FC = () => {
         <SettingsModal
           settings={settings}
           onSaveSettings={handleSaveSettings}
+          onDisconnect={handleDisconnect}
           connectionStatus={connectionStatus}
         />
       )}

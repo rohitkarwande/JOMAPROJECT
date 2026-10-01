@@ -14,12 +14,12 @@ interface OutputControlPanelProps {
 export const OutputControlPanel: React.FC<OutputControlPanelProps> = ({
   outputState,
   outputConfirmedState = 'OFF',
-  validationStatus = 'SIMULATOR_TESTED',
-  isSimulator = true,
+  validationStatus = 'HARDWARE_VALIDATED',
+  isSimulator = false,
   onToggleOutput,
   disabled = false,
 }) => {
-  const isAuthorized = isSimulator || validationStatus === 'SIMULATOR_TESTED' || validationStatus === 'HARDWARE_VALIDATED';
+  const isAuthorized = validationStatus === 'HARDWARE_VALIDATED' || validationStatus === 'SIMULATOR_TESTED' || isSimulator;
 
   const isOutputOn = outputState && outputConfirmedState === 'ON';
 

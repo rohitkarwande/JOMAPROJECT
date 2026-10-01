@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetBatTest: () => ipcRenderer.invoke('modbus:resetBatTest'),
     triggerSimAlarm: (type: 'power' | 'volt') => ipcRenderer.invoke('modbus:triggerSimAlarm', type),
     clearAlarmCoil: (coilIndex: number) => ipcRenderer.invoke('modbus:clearAlarmCoil', coilIndex),
+    diagReadRegister: (params: { type: 'FLOAT' | 'COIL' | 'INT'; address: number }) => ipcRenderer.invoke('modbus:diagReadRegister', params),
+    diagWriteRegister: (params: { type: 'FLOAT' | 'COIL' | 'INT'; address: number; value: number | boolean }) => ipcRenderer.invoke('modbus:diagWriteRegister', params),
+    diagReadAllRegisters: () => ipcRenderer.invoke('modbus:diagReadAllRegisters'),
     onTelemetry: (callback: (data: any) => void) => {
       const listener = (_: any, value: any) => callback(value);
       ipcRenderer.on('modbus:telemetry', listener);

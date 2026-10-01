@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { EngineeringSettings } from '../types/scada';
 import { ShieldAlert, Check, Save } from 'lucide-react';
 import { JomaLogo } from './JomaLogo';
+import { KeyboardNumericInput } from './KeyboardNumericInput';
 
 interface EngSettingsProps {
   engSettings: EngineeringSettings;
@@ -120,9 +121,9 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
               }}
             >
-              <input
-                type="number"
-                step="0.001"
+              <KeyboardNumericInput
+                step={0.1}
+                precision={3}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -135,10 +136,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.vmax}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleChange('vmax', val === '' ? 0 : (parseFloat(val) || 0));
-                }}
+                onChange={(val) => handleChange('vmax', val)}
               />
             </div>
           </div>
@@ -165,9 +163,9 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
               }}
             >
-              <input
-                type="number"
-                step="0.001"
+              <KeyboardNumericInput
+                step={10}
+                precision={1}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -180,10 +178,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.pmax}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleChange('pmax', val === '' ? 0 : (parseFloat(val) || 0));
-                }}
+                onChange={(val) => handleChange('pmax', val)}
               />
             </div>
           </div>
@@ -210,9 +205,9 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
               }}
             >
-              <input
-                type="number"
-                step="0.001"
+              <KeyboardNumericInput
+                step={0.1}
+                precision={3}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -225,10 +220,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.imax}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleChange('imax', val === '' ? 0 : (parseFloat(val) || 0));
-                }}
+                onChange={(val) => handleChange('imax', val)}
               />
             </div>
           </div>
@@ -255,9 +247,9 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
               }}
             >
-              <input
-                type="number"
-                step="0.001"
+              <KeyboardNumericInput
+                step={1}
+                precision={2}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -270,10 +262,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.rmax}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  handleChange('rmax', val === '' ? 0 : (parseFloat(val) || 0));
-                }}
+                onChange={(val) => handleChange('rmax', val)}
               />
             </div>
           </div>
@@ -300,10 +289,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
               }}
             >
-              <input
-                type="number"
-                min={0.001}
-                step="0.001"
+              <KeyboardNumericInput
+                min={0.01}
+                step={0.1}
+                precision={3}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -316,24 +305,12 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                   outline: 'none'
                 }}
                 value={localEng.logIntervalMinutes ?? (localEng.logIntervalSeconds ? +(localEng.logIntervalSeconds / 60).toFixed(3) : 1)}
-                onChange={(e) => {
-                  const valStr = e.target.value;
-                  if (valStr === '') {
-                    setLocalEng((prev) => ({
-                      ...prev,
-                      logIntervalMinutes: 0,
-                      logIntervalSeconds: 0
-                    }));
-                  } else {
-                    const mins = parseFloat(valStr);
-                    if (!isNaN(mins)) {
-                      setLocalEng((prev) => ({
-                        ...prev,
-                        logIntervalMinutes: mins,
-                        logIntervalSeconds: Math.max(0.1, parseFloat((mins * 60).toFixed(3)))
-                      }));
-                    }
-                  }
+                onChange={(num) => {
+                  setLocalEng((prev) => ({
+                    ...prev,
+                    logIntervalMinutes: num,
+                    logIntervalSeconds: Math.max(0.1, parseFloat((num * 60).toFixed(3)))
+                  }));
                 }}
               />
             </div>

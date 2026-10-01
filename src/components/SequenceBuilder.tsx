@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { EngineeringSettings, formatCurrent, formatVoltage, SequenceConfig, SequencePreset, SequenceProgress, SequenceStep, SequenceStepMode, TelemetryPoint } from '../types/scada';
 import { Power, PowerOff, Plus, Trash2, ArrowUp, ArrowDown, Save, FolderOpen, ShieldAlert, Check, Clock, RotateCcw, AlertTriangle, Activity, Zap, RefreshCw } from 'lucide-react';
+import { KeyboardNumericInput } from './KeyboardNumericInput';
 
 interface SequenceBuilderProps {
   engSettings: EngineeringSettings;
   telemetry: TelemetryPoint;
-  connectionStatus: 'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR';
-  isSimulator: boolean;
+  connectionStatus: 'CONNECTED' | 'DISCONNECTED';
+  isSimulator?: boolean;
   onSaveSessionLog?: (session: any) => void;
 }
 
@@ -525,17 +526,17 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
 
             <div>
               <label className="setpoint-label">NUMBER OF CYCLES:</label>
-              <input
-                type="number"
+              <KeyboardNumericInput
                 min={1}
                 step={1}
+                precision={0}
                 className="setpoint-input-wrapper"
                 style={{ width: '100%', padding: '10px', fontWeight: 700, color: '#0f172a', background: '#ffffff' }}
                 value={cycles}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10) || 1;
-                  setCycles(val);
-                  validateSequence(testName, val, steps, sequenceMode);
+                onChange={(val) => {
+                  const num = Math.max(1, Math.round(val));
+                  setCycles(num);
+                  validateSequence(testName, num, steps, sequenceMode);
                 }}
                 disabled={isExecuting}
               />
@@ -566,32 +567,35 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
                     {/* Duration Inputs: H M S */}
                     <td style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <input
-                          type="number"
+                        <KeyboardNumericInput
                           min={0}
+                          step={1}
+                          precision={0}
                           style={{ width: '58px', padding: '6px 4px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 700 }}
                           value={step.durationHours}
-                          onChange={(e) => handleEditStep(idx, 'durationHours', parseInt(e.target.value, 10) || 0)}
+                          onChange={(val) => handleEditStep(idx, 'durationHours', Math.max(0, Math.round(val)))}
                           disabled={isExecuting}
                         />
                         <span style={{ fontWeight: 700 }}>h</span>
-                        <input
-                          type="number"
+                        <KeyboardNumericInput
                           min={0}
                           max={59}
+                          step={1}
+                          precision={0}
                           style={{ width: '58px', padding: '6px 4px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 700 }}
                           value={step.durationMinutes}
-                          onChange={(e) => handleEditStep(idx, 'durationMinutes', parseInt(e.target.value, 10) || 0)}
+                          onChange={(val) => handleEditStep(idx, 'durationMinutes', Math.max(0, Math.min(59, Math.round(val))))}
                           disabled={isExecuting}
                         />
                         <span style={{ fontWeight: 700 }}>m</span>
-                        <input
-                          type="number"
+                        <KeyboardNumericInput
                           min={0}
                           max={59}
+                          step={1}
+                          precision={0}
                           style={{ width: '58px', padding: '6px 4px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 700 }}
                           value={step.durationSeconds}
-                          onChange={(e) => handleEditStep(idx, 'durationSeconds', parseInt(e.target.value, 10) || 0)}
+                          onChange={(val) => handleEditStep(idx, 'durationSeconds', Math.max(0, Math.min(59, Math.round(val))))}
                           disabled={isExecuting}
                         />
                         <span style={{ fontWeight: 700 }}>s</span>
@@ -602,12 +606,12 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
                     <td style={{ padding: '10px 12px' }}>
                       {sequenceMode === 'CV' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <input
-                            type="number"
-                            step="0.1"
+                          <KeyboardNumericInput
+                            step={0.1}
+                            precision={3}
                             style={{ width: '85px', padding: '6px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 800, color: '#1d4ed8' }}
                             value={step.setpointV ?? 24.0}
-                            onChange={(e) => handleEditStep(idx, 'setpointV', parseFloat(e.target.value) || 0)}
+                            onChange={(val) => handleEditStep(idx, 'setpointV', val)}
                             disabled={isExecuting}
                           />
                           <span style={{ fontWeight: 700 }}>V</span>
@@ -616,12 +620,12 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
 
                       {sequenceMode === 'CC' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <input
-                            type="number"
-                            step="0.1"
+                          <KeyboardNumericInput
+                            step={0.1}
+                            precision={3}
                             style={{ width: '85px', padding: '6px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 800, color: '#047857' }}
                             value={step.setpointI ?? 5.0}
-                            onChange={(e) => handleEditStep(idx, 'setpointI', parseFloat(e.target.value) || 0)}
+                            onChange={(val) => handleEditStep(idx, 'setpointI', val)}
                             disabled={isExecuting}
                           />
                           <span style={{ fontWeight: 700 }}>A</span>
@@ -630,12 +634,12 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
 
                       {sequenceMode === 'CR' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <input
-                            type="number"
-                            step="0.1"
+                          <KeyboardNumericInput
+                            step={0.5}
+                            precision={2}
                             style={{ width: '85px', padding: '6px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 800, color: '#b45309' }}
                             value={step.setpointR ?? 10.0}
-                            onChange={(e) => handleEditStep(idx, 'setpointR', parseFloat(e.target.value) || 0)}
+                            onChange={(val) => handleEditStep(idx, 'setpointR', val)}
                             disabled={isExecuting}
                           />
                           <span style={{ fontWeight: 700 }}>Ω</span>
@@ -644,12 +648,12 @@ export const SequenceBuilder: React.FC<SequenceBuilderProps> = ({
 
                       {sequenceMode === 'CP' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <input
-                            type="number"
-                            step="0.1"
+                          <KeyboardNumericInput
+                            step={5}
+                            precision={1}
                             style={{ width: '85px', padding: '6px', textAlign: 'center', borderRadius: '4px', border: '1px solid var(--border-color)', fontWeight: 800, color: '#7c3aed' }}
                             value={step.setpointP ?? 120.0}
-                            onChange={(e) => handleEditStep(idx, 'setpointP', parseFloat(e.target.value) || 0)}
+                            onChange={(val) => handleEditStep(idx, 'setpointP', val)}
                             disabled={isExecuting}
                           />
                           <span style={{ fontWeight: 700 }}>W</span>

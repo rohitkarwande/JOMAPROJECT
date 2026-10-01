@@ -1,6 +1,7 @@
 import React from 'react';
 import { EngineeringSettings, formatCurrent, formatVoltage, OperationMode, SetpointValues, TelemetryPoint } from '../types/scada';
 import { Gauge, Sliders, Battery, Zap, Shield, Flame, AlertCircle } from 'lucide-react';
+import { KeyboardNumericInput } from './KeyboardNumericInput';
 
 interface MetricsGridProps {
   currentMode: OperationMode;
@@ -25,7 +26,8 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
   elapsedTimeSeconds,
   isSequenceRunning = false
 }) => {
-  const isFreezed = outputState || isSequenceRunning;
+  // Allow live setpoint editing while hardware output is active; only freeze during automated test sequences
+  const isFreezed = isSequenceRunning;
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -93,7 +95,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <Gauge size={14} style={{ color: 'var(--accent-cyan)' }} />
           </div>
           <div className="led-value voltage">
-            {outputState ? formatVoltage(telemetry.vmon) : '-1.00'}
+            {formatVoltage(telemetry.vmon ?? 0)}
             <span className="led-unit">V</span>
           </div>
         </div>
@@ -104,11 +106,29 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <Gauge size={14} style={{ color: 'var(--accent-green)' }} />
           </div>
           <div className="led-value current">
-            {outputState ? formatCurrent(telemetry.imon) : '-1.00'}
+            {formatCurrent(telemetry.imon ?? 0)}
             <span className="led-unit">A</span>
           </div>
         </div>
       </div>
+
+      {telemetry.deviceResponding === false && (
+        <div style={{
+          background: '#fffbeb',
+          border: '1.5px solid #f59e0b',
+          borderRadius: '6px',
+          padding: '8px 12px',
+          color: '#92400e',
+          fontSize: '0.8rem',
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <AlertCircle size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+          <span>Device not responding on Modbus RS485. Please verify Baud Rate and Slave ID in RS485 Settings.</span>
+        </div>
+      )}
 
       {/* Mode-Specific Interactive Parameter Inputs */}
       <div className="setpoint-card">
@@ -122,14 +142,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>CV SET (V):</span>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={3}
                   className="setpoint-input"
                   style={{ border: isCvExceeded ? '2px solid #ef4444' : undefined, background: isCvExceeded ? '#fef2f2' : undefined }}
                   value={setpoints.cv}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('cv', parseVal(e.target.value))}
+                  onChange={(val) => onUpdateSetpoint('cv', val)}
                 />
                 <span className="setpoint-unit">V</span>
               </div>
@@ -141,20 +161,26 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
               )}
             </div>
             <div className="setpoint-input-wrapper">
-              <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
+              </div>
               <div
                 className="setpoint-input"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: '#e2e8f0',
-                  color: '#475569',
+                  background: '#f1f5f9',
+                  color: '#0f172a',
+                  border: '1.5px solid #cbd5e1',
                   cursor: 'not-allowed',
-                  fontWeight: 700
+                  fontWeight: 800,
+                  fontSize: '0.95rem'
                 }}
+                title="I Limit in CV mode is monitored from the physical HMI panel"
               >
-                {setpoints.iset.toFixed(3)}
+                {(telemetry.hardwareIlimit !== undefined ? telemetry.hardwareIlimit : setpoints.iset).toFixed(3)}
               </div>
               <span className="setpoint-unit">A</span>
             </div>
@@ -166,14 +192,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I TARGET (A):</span>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={3}
                   className="setpoint-input"
                   style={{ border: isCcTargetExceeded ? '2px solid #ef4444' : undefined, background: isCcTargetExceeded ? '#fef2f2' : undefined }}
                   value={setpoints.iset}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('iset', parseVal(e.target.value))}
+                  onChange={(val) => onUpdateSetpoint('iset', val)}
                 />
                 <span className="setpoint-unit">A</span>
               </div>
@@ -185,26 +211,29 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
               )}
             </div>
 
-            <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="setpoint-input-wrapper">
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I MAX (A):</span>
-                <input
-                  type="number"
-                  step="0.001"
-                  className="setpoint-input"
-                  style={{ border: isCcImaxExceeded ? '2px solid #ef4444' : undefined, background: isCcImaxExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.imax}
-                  disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('imax', parseVal(e.target.value))}
-                />
-                <span className="setpoint-unit">A</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
               </div>
-              {isCcImaxExceeded && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
-                  <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS SAFETY IMAX LIMIT ({imax} A)!</span>
-                </div>
-              )}
+              <div
+                className="setpoint-input"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#f1f5f9',
+                  color: '#0f172a',
+                  border: '1.5px solid #cbd5e1',
+                  cursor: 'not-allowed',
+                  fontWeight: 800,
+                  fontSize: '0.95rem'
+                }}
+                title="I MAX (I_SET_RANGE_CC) is monitored from the physical HMI panel and cannot be changed from the app"
+              >
+                {setpoints.imax.toFixed(3)}
+              </div>
+              <span className="setpoint-unit">A</span>
             </div>
           </>
         )}
@@ -214,14 +243,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>R (Ω):</span>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.5}
+                  precision={2}
                   className="setpoint-input"
                   style={{ border: isRsetExceeded ? '2px solid #ef4444' : undefined, background: isRsetExceeded ? '#fef2f2' : undefined }}
                   value={setpoints.rset}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('rset', parseVal(e.target.value))}
+                  onChange={(val) => onUpdateSetpoint('rset', val)}
                 />
                 <span className="setpoint-unit">Ω</span>
               </div>
@@ -233,20 +262,26 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
               )}
             </div>
             <div className="setpoint-input-wrapper">
-              <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
+              </div>
               <div
                 className="setpoint-input"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: '#e2e8f0',
-                  color: '#475569',
+                  background: '#f1f5f9',
+                  color: '#0f172a',
+                  border: '1.5px solid #cbd5e1',
                   cursor: 'not-allowed',
-                  fontWeight: 700
+                  fontWeight: 800,
+                  fontSize: '0.95rem'
                 }}
+                title="I Limit in CR mode is monitored from the physical HMI panel"
               >
-                {setpoints.iset.toFixed(3)}
+                {(telemetry.hardwareIlimit !== undefined ? telemetry.hardwareIlimit : setpoints.iset).toFixed(3)}
               </div>
               <span className="setpoint-unit">A</span>
             </div>
@@ -258,14 +293,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>CP (W):</span>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={5}
+                  precision={1}
                   className="setpoint-input"
                   style={{ border: isPsetExceeded ? '2px solid #ef4444' : undefined, background: isPsetExceeded ? '#fef2f2' : undefined }}
                   value={setpoints.pset}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('pset', parseVal(e.target.value))}
+                  onChange={(val) => onUpdateSetpoint('pset', val)}
                 />
                 <span className="setpoint-unit">W</span>
               </div>
@@ -280,14 +315,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={3}
                   className="setpoint-input"
                   style={{ border: isIlimitExceeded ? '2px solid #ef4444' : undefined, background: isIlimitExceeded ? '#fef2f2' : undefined }}
                   value={setpoints.iset}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('iset', parseVal(e.target.value))}
+                  onChange={(val) => onUpdateSetpoint('iset', val)}
                 />
                 <span className="setpoint-unit">A</span>
               </div>
@@ -308,13 +343,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
               {/* Vcutoff Input Card */}
               <div style={{ background: '#e0f2fe', border: '1.5px solid #38bdf8', borderRadius: '6px', padding: '8px 10px' }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1' }}>Vcutoff (V):</div>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={3}
                   style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
                   value={setpoints.cutoffV}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('cutoffV', parseFloat(e.target.value) || 0)}
+                  onChange={(val) => onUpdateSetpoint('cutoffV', val)}
                 />
               </div>
 
@@ -323,26 +358,26 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1' }}>
                   {setpoints.batTestSubMode === 'CC' ? 'Iset (A):' : 'Rset (Ω):'}
                 </div>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={setpoints.batTestSubMode === 'CC' ? 3 : 2}
                   style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
                   value={setpoints.batTestSubMode === 'CC' ? setpoints.iset : setpoints.rset}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint(setpoints.batTestSubMode === 'CC' ? 'iset' : 'rset', parseFloat(e.target.value) || 0)}
+                  onChange={(val) => onUpdateSetpoint(setpoints.batTestSubMode === 'CC' ? 'iset' : 'rset', val)}
                 />
               </div>
 
               {/* AH Capacity Input Card */}
               <div style={{ background: '#e0f2fe', border: '1.5px solid #38bdf8', borderRadius: '6px', padding: '8px 10px' }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1' }}>AH :</div>
-                <input
-                  type="number"
-                  step="0.001"
+                <KeyboardNumericInput
+                  step={0.1}
+                  precision={1}
                   style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
                   value={setpoints.ah ?? 0}
                   disabled={isFreezed}
-                  onChange={(e) => onUpdateSetpoint('ah', parseFloat(e.target.value) || 0)}
+                  onChange={(val) => onUpdateSetpoint('ah', val)}
                 />
               </div>
 
@@ -350,25 +385,25 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
               <div style={{ background: '#e0f2fe', border: '1.5px solid #38bdf8', borderRadius: '6px', padding: '8px 10px' }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0369a1', textAlign: 'center' }}>HRS : MIN</div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px', marginTop: '2px' }}>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
+                  <KeyboardNumericInput
+                    step={1}
+                    min={0}
+                    precision={0}
                     style={{ width: '45%', background: 'transparent', border: 'none', fontSize: '1.15rem', fontWeight: 800, color: '#0284c7', textAlign: 'right', outline: 'none' }}
                     value={setpoints.hrs ?? 0}
                     disabled={isFreezed}
-                    onChange={(e) => onUpdateSetpoint('hrs', parseInt(e.target.value, 10) || 0)}
+                    onChange={(val) => onUpdateSetpoint('hrs', val)}
                   />
                   <span style={{ fontWeight: 800, color: '#0284c7', fontSize: '1.15rem' }}>:</span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="59"
+                  <KeyboardNumericInput
+                    step={1}
+                    min={0}
+                    max={59}
+                    precision={0}
                     style={{ width: '45%', background: 'transparent', border: 'none', fontSize: '1.15rem', fontWeight: 800, color: '#0284c7', textAlign: 'left', outline: 'none' }}
                     value={setpoints.min ?? 0}
                     disabled={isFreezed}
-                    onChange={(e) => onUpdateSetpoint('min', parseInt(e.target.value, 10) || 0)}
+                    onChange={(val) => onUpdateSetpoint('min', val)}
                   />
                 </div>
               </div>

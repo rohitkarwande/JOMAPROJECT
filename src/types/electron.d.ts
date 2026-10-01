@@ -19,6 +19,9 @@ export interface ElectronAPI {
     resetBatTest: () => Promise<CommandResult | boolean>;
     triggerSimAlarm: (type: 'power' | 'volt') => Promise<CommandResult | boolean>;
     clearAlarmCoil: (coilIndex: number) => Promise<CommandResult | boolean>;
+    diagReadRegister: (params: { type: 'FLOAT' | 'COIL' | 'INT'; address: number }) => Promise<{ success: boolean; value?: number | boolean; error?: string }>;
+    diagWriteRegister: (params: { type: 'FLOAT' | 'COIL' | 'INT'; address: number; value: number | boolean }) => Promise<{ success: boolean; error?: string }>;
+    diagReadAllRegisters: () => Promise<{ success: boolean; registers?: Record<string, { value: number | boolean; formatted: string }>; error?: string }>;
     onTelemetry: (callback: (data: TelemetryPoint) => void) => () => void;
     onStatusChange: (callback: (status: 'CONNECTED' | 'DISCONNECTED' | 'SIMULATOR') => void) => () => void;
   };

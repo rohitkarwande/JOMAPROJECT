@@ -4,6 +4,10 @@ import fs from 'fs';
 import { ModbusRtuService } from './modbusRtuService';
 import { DatabaseService } from './databaseService';
 
+// Prevent Chromium GPU cache file-locking warnings on Windows
+app.commandLine.appendSwitch('disable-gpu-cache');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
 let mainWindow: BrowserWindow | null = null;
 const modbusService = new ModbusRtuService();
 const dbService = new DatabaseService();
@@ -103,7 +107,7 @@ app.whenReady().then(() => {
     }
   });
 
-  modbusService.startPolling();
+  // No auto-connection on startup: starts in clean DISCONNECTED state until user clicks Connect
 });
 
 app.on('window-all-closed', () => {
@@ -161,24 +165,24 @@ ipcMain.handle('serial:getPorts', async () => {
     }
   }
 
-  // Strategy 3: Standard fallback ports list if no hardware ports detected
-  if (portsList.length === 0) {
-    const defaultPorts = ['COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'COM10', '/dev/ttyUSB0', '/dev/ttyACM0'];
-    defaultPorts.forEach((p) => {
-      portsList.push({ path: p, manufacturer: `Default / Manual (${p})` });
-    });
-  }
+  // Prioritize USB / Hardware adapters (e.g. CH340, FTDI) over virtual Bluetooth ports
+  portsList.sort((a, b) => {
+    const isUsbA = /USB|CH340|FTDI|CP210|Silicon/i.test(a.manufacturer);
+    const isUsbB = /USB|CH340|FTDI|CP210|Silicon/i.test(b.manufacturer);
+    if (isUsbA && !isUsbB) return -1;
+    if (!isUsbA && isUsbB) return 1;
+    return a.path.localeCompare(b.path);
+  });
 
   return portsList;
 });
 
 ipcMain.handle('modbus:connect', async (_, config) => {
-  modbusService.updateSettings(config);
-  return true;
+  return modbusService.updateSettings(config);
 });
 
 ipcMain.handle('modbus:disconnect', async () => {
-  modbusService.updateSettings({ isSimulator: true });
+  await modbusService.disconnectHardware();
   return true;
 });
 
@@ -209,6 +213,18 @@ ipcMain.handle('modbus:triggerSimAlarm', async (_, type) => {
 
 ipcMain.handle('modbus:clearAlarmCoil', async (_, coilIndex) => {
   return modbusService.clearAlarmCoil(coilIndex);
+});
+
+ipcMain.handle('modbus:diagReadRegister', async (_, params) => {
+  return modbusService.diagReadRegister(params);
+});
+
+ipcMain.handle('modbus:diagWriteRegister', async (_, params) => {
+  return modbusService.diagWriteRegister(params);
+});
+
+ipcMain.handle('modbus:diagReadAllRegisters', async () => {
+  return modbusService.diagReadAllRegisters();
 });
 
 // Automated Test Sequence IPC Handlers

@@ -57,6 +57,8 @@ export interface TelemetryPoint {
   popPowerExceed?: boolean; // Popup alarm 0X3
   popVoltExceed?: boolean;  // Popup alarm 0X4
   hardwareMode?: OperationMode; // Active Mode read from HMI (4X 29)
+  hardwareIlimit?: number;      // Active I LIMIT read from HMI (4X 15)
+  deviceResponding?: boolean; // True if slave device is acknowledging Modbus queries
 }
 
 export interface EngineeringSettings {
@@ -82,30 +84,33 @@ export interface ConnectionSettings {
   customVoltageScale?: number;
   customCurrentScale?: number;
   customOutputControlFc?: 5 | 6;
+  wordSwap?: boolean; // true = Word-Swapped (Low Word First / CDAB), false = Big Endian (High Word First / ABCD)
 }
 
 export interface RegisterOffsets {
-  mode: number;               // 4X 29 (Offset 28) INT (6=CV, 7=CC, 8=CR, 9=CP, 14=BAT TEST)
-  vset: number;               // 4X 5 (Offset 4) FLOAT
-  vmaxLimit: number;          // 4X 7 (Offset 6) FLOAT
-  imaxLimit: number;          // 4X 9 (Offset 8) FLOAT
-  pmaxLimit: number;          // 4X 11 (Offset 10) FLOAT
-  rmaxLimit?: number;         // 4X 30 (Offset 29) FLOAT
-  iset: number;               // 4X 13 (Offset 12) FLOAT
-  isetRow?: number;           // 4X 15 (Offset 14) FLOAT
-  rset: number;               // 4X 17 (Offset 16) FLOAT
-  pset: number;               // 4X 19 (Offset 18) FLOAT
-  cutoffV: number;            // 4X 21 (Offset 20) FLOAT
-  hrs?: number;               // 4X 23 (Offset 22) FLOAT
-  min?: number;               // 4X 25 (Offset 24) FLOAT
-  ah?: number;                // 4X 27 (Offset 26) FLOAT
-  vmon: number;               // 4X 1 (Offset 0) FLOAT
-  imon: number;               // 4X 3 (Offset 2) FLOAT
-  outputCoil: number;         // 0X 1 (Coil 0) Bit
-  batSubModeCoil?: number;    // 0X 2 (Coil 1) Bit
-  popPowerExceedCoil?: number;// 0X 3 (Coil 2) Bit
-  popVoltExceedCoil?: number; // 0X 4 (Coil 3) Bit
+  mode: number;               // 4X 29 (INT, 1 Reg: 6=CV, 7=CC, 8=CR, 9=CP, 14=BAT TEST)
+  vset: number;               // 4X 5 (FLOAT, 2 Regs) - CV_VOLT
+  vmaxLimit: number;          // 4X 7 (FLOAT, 2 Regs) - V_MAX
+  imaxLimit: number;          // 4X 9 (FLOAT, 2 Regs) - I_MAX (ENG SETTINGS)
+  pmaxLimit: number;          // 4X 11 (FLOAT, 2 Regs) - P_MAX
+  rmaxLimit?: number;         // 4X 30 (FLOAT, 2 Regs) - R_MAX
+  ccImaxRange?: number;       // 4X 13 (FLOAT, 2 Regs) - I_SET_RANGE_CC (I MAX CC MODE)
+  iset: number;               // 4X 15 (FLOAT, 2 Regs) - I_SET_ROW_CC (I TARGET / I LIMIT)
+  isetRow?: number;           // 4X 15 (FLOAT, 2 Regs)
+  rset: number;               // 4X 17 (FLOAT, 2 Regs) - RESISTOR_CR_MODE
+  pset: number;               // 4X 19 (FLOAT, 2 Regs) - POWER_CP_MODE
+  cutoffV: number;            // 4X 21 (FLOAT, 2 Regs) - VCUTOFF
+  hrs?: number;               // 4X 23 (FLOAT, 2 Regs) - HRS
+  min?: number;               // 4X 25 (FLOAT, 2 Regs) - MIN
+  ah?: number;                // 4X 27 (FLOAT, 2 Regs) - AH
+  vmon: number;               // 4X 1 (FLOAT, 2 Regs) - V MON
+  imon: number;               // 4X 3 (FLOAT, 2 Regs) - I MON
+  outputCoil: number;         // 0X 1 (Bit) - START_STOP
+  batSubModeCoil?: number;    // 0X 2 (Bit: 1=CR, 0=CC) - CC_CR_BAT_MODE
+  popPowerExceedCoil?: number;// 0X 3 (Bit) - POP_POWER_exceed
+  popVoltExceedCoil?: number; // 0X 4 (Bit) - POP_VOLT_exceed
   imax?: number;              // Legacy fallback
+  addressBase?: 0 | 1;        // 1 = Direct CSV MainAddress (Base 1), 0 = Wire Offset (Base 0)
 }
 
 export type SequenceStepMode = 'CV' | 'CC' | 'CR' | 'CP';
@@ -218,29 +223,60 @@ export interface SystemState {
   alarmMessage?: string | null;
 }
 
-// Default Client CSV Register Map Configuration
-export const CLIENT_CSV_REGISTERS: RegisterOffsets = {
-  vmon: 0,                // 4X 1 (Offset 0, FLOAT, 2 Regs)
-  imon: 2,                // 4X 3 (Offset 2, FLOAT, 2 Regs)
-  outputCoil: 0,          // 0X 1 (Coil 0, Bit)
-  vset: 4,                // 4X 5 (Offset 4, FLOAT, 2 Regs)
-  vmaxLimit: 6,           // 4X 7 (Offset 6, FLOAT, 2 Regs)
-  imaxLimit: 8,           // 4X 9 (Offset 8, FLOAT, 2 Regs)
-  pmaxLimit: 10,          // 4X 11 (Offset 10, FLOAT, 2 Regs)
-  iset: 12,               // 4X 13 (Offset 12, FLOAT, 2 Regs)
-  isetRow: 14,            // 4X 15 (Offset 14, FLOAT, 2 Regs)
-  rset: 16,               // 4X 17 (Offset 16, FLOAT, 2 Regs)
-  pset: 18,               // 4X 19 (Offset 18, FLOAT, 2 Regs)
-  cutoffV: 20,            // 4X 21 (Offset 20, FLOAT, 2 Regs)
-  hrs: 22,                // 4X 23 (Offset 22, FLOAT, 2 Regs)
-  min: 24,                // 4X 25 (Offset 24, FLOAT, 2 Regs)
-  ah: 26,                 // 4X 27 (Offset 26, FLOAT, 2 Regs)
-  batSubModeCoil: 1,      // 0X 2 (Coil 1, Bit: 0=CC, 1=CR)
-  popPowerExceedCoil: 2,  // 0X 3 (Coil 2, Bit)
-  popVoltExceedCoil: 3,   // 0X 4 (Coil 3, Bit)
-  mode: 28,               // 4X 29 (Offset 28, INT, 1 Reg: 6=CV, 7=CC, 8=CR, 9=CP, 14=BAT TEST)
-  rmaxLimit: 29           // 4X 30 (Offset 29, FLOAT, 2 Regs)
+// Base 1: Direct CSV MainAddress (1-indexed matching user CSV file exactly)
+export const CLIENT_CSV_REGISTERS_BASE1: RegisterOffsets = {
+  vmon: 1,                // 4X 1 (FLOAT, 2 Regs: 1 & 2) - V MON
+  imon: 3,                // 4X 3 (FLOAT, 2 Regs: 3 & 4) - I MON
+  outputCoil: 1,          // 0X 1 (Bit) - START_STOP (1=ON, 0=OFF)
+  vset: 5,                // 4X 5 (FLOAT, 2 Regs: 5 & 6) - CV_VOLT (CV SET in cv mode)
+  vmaxLimit: 7,           // 4X 7 (FLOAT, 2 Regs: 7 & 8) - V_MAX (ENG SETTINGS)
+  imaxLimit: 9,           // 4X 9 (FLOAT, 2 Regs: 9 & 10) - I_MAX (ENG SETTINGS)
+  pmaxLimit: 11,          // 4X 11 (FLOAT, 2 Regs: 11 & 12) - P_MAX (ENG SETTINGS)
+  ccImaxRange: 13,        // 4X 13 (FLOAT, 2 Regs: 13 & 14) - I_SET_RANGE_CC (I MAX CC MODE)
+  iset: 15,               // 4X 15 (FLOAT, 2 Regs: 15 & 16) - I_SET_ROW_CC (I TARGET CC MODE / SETTABLE)
+  isetRow: 15,            // 4X 15 (FLOAT, 2 Regs: 15 & 16)
+  rset: 17,               // 4X 17 (FLOAT, 2 Regs: 17 & 18) - RESISTOR_CR_MODE (Rset CR mode)
+  pset: 19,               // 4X 19 (FLOAT, 2 Regs: 19 & 20) - POWER_CP_MODE (CP W range)
+  cutoffV: 21,            // 4X 21 (FLOAT, 2 Regs: 21 & 22) - VCUTOFF (Vcutoff battery test mode)
+  hrs: 23,                // 4X 23 (FLOAT, 2 Regs: 23 & 24) - HRS
+  min: 25,                // 4X 25 (FLOAT, 2 Regs: 25 & 26) - MIN
+  ah: 27,                 // 4X 27 (FLOAT, 2 Regs: 27 & 28) - AH
+  batSubModeCoil: 2,      // 0X 2 (Bit: 1=CR mode, 0=CC mode) - CC_CR_BAT_MODE
+  popPowerExceedCoil: 3,  // 0X 3 (Bit: 1=HIGH POWER alarm popup) - POP_POWER_exceed
+  popVoltExceedCoil: 4,   // 0X 4 (Bit: 1=HIGH VOLTAGE alarm popup) - POP_VOLT_exceed
+  mode: 29,               // 4X 29 (INT, 1 Reg: 6=CV, 7=CC, 8=CR, 9=CP, 14=BAT TEST) - MODE_SELECTION
+  rmaxLimit: 30,          // 4X 30 (FLOAT, 2 Regs: 30 & 31) - R_MAX (ENG SETTINGS)
+  addressBase: 1
 };
+
+// Base 0: Wire Protocol Address Offset (0-indexed where PDU Address = MainAddress - 1)
+export const CLIENT_CSV_REGISTERS_BASE0: RegisterOffsets = {
+  vmon: 0,                // 4X 1 -> Wire PDU 0
+  imon: 2,                // 4X 3 -> Wire PDU 2
+  outputCoil: 0,          // 0X 1 -> Wire PDU 0
+  vset: 4,                // 4X 5 -> Wire PDU 4
+  vmaxLimit: 6,           // 4X 7 -> Wire PDU 6
+  imaxLimit: 8,           // 4X 9 -> Wire PDU 8
+  pmaxLimit: 10,          // 4X 11 -> Wire PDU 10
+  ccImaxRange: 12,        // 4X 13 -> Wire PDU 12
+  iset: 14,               // 4X 15 -> Wire PDU 14
+  isetRow: 14,            // 4X 15 -> Wire PDU 14
+  rset: 16,               // 4X 17 -> Wire PDU 16
+  pset: 18,               // 4X 19 -> Wire PDU 18
+  cutoffV: 20,            // 4X 21 -> Wire PDU 20
+  hrs: 22,                // 4X 23 -> Wire PDU 22
+  min: 24,                // 4X 25 -> Wire PDU 24
+  ah: 26,                 // 4X 27 -> Wire PDU 26
+  batSubModeCoil: 1,      // 0X 2 -> Wire PDU 1
+  popPowerExceedCoil: 2,  // 0X 3 -> Wire PDU 2
+  popVoltExceedCoil: 3,   // 0X 4 -> Wire PDU 3
+  mode: 28,               // 4X 29 -> Wire PDU 28
+  rmaxLimit: 29,          // 4X 30 -> Wire PDU 29
+  addressBase: 0
+};
+
+// Default Register Map matches Hardware Wire Protocol (Base 0 Wire Offset)
+export const CLIENT_CSV_REGISTERS: RegisterOffsets = CLIENT_CSV_REGISTERS_BASE0;
 
 // Built-in Supported Profiles
 export const BUILTIN_PROFILES: DeviceProfile[] = [
@@ -271,13 +307,13 @@ export const BUILTIN_PROFILES: DeviceProfile[] = [
  */
 export function formatVoltage(v: number | undefined | null): string {
   if (v === undefined || v === null || isNaN(v)) return '0.000';
-  const absV = Math.abs(v);
-  if (absV < 30) {
-    return v.toFixed(3);
-  } else if (absV < 60) {
-    return v.toFixed(2);
+  const val = Math.max(0, v);
+  if (val < 30) {
+    return val.toFixed(3);
+  } else if (val < 60) {
+    return val.toFixed(2);
   } else {
-    return v.toFixed(1);
+    return val.toFixed(1);
   }
 }
 
@@ -289,13 +325,13 @@ export function formatVoltage(v: number | undefined | null): string {
  */
 export function formatCurrent(i: number | undefined | null): string {
   if (i === undefined || i === null || isNaN(i)) return '0.000';
-  const absI = Math.abs(i);
-  if (absI < 30) {
-    return i.toFixed(3);
-  } else if (absI < 60) {
-    return i.toFixed(2);
+  const val = Math.max(0, i);
+  if (val < 30) {
+    return val.toFixed(3);
+  } else if (val < 60) {
+    return val.toFixed(2);
   } else {
-    return i.toFixed(1);
+    return val.toFixed(1);
   }
 }
 
