@@ -8,6 +8,7 @@ interface HeaderProps {
   batTestSubMode?: 'CC' | 'CR';
   connectionStatus: 'CONNECTED' | 'DISCONNECTED';
   activeTab: 'dashboard' | 'sequence' | 'history' | 'settings' | 'engSettings';
+  protocolType?: 'RS485' | 'RS232';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,6 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   batTestSubMode = 'CC',
   connectionStatus,
   activeTab,
+  protocolType = 'RS485',
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
@@ -63,10 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
           {connectionStatus === 'CONNECTED' ? (
             <>
               <Activity size={14} />
-              <span>CONNECTED (RS485)</span>
+              <span>CONNECTED ({protocolType})</span>
             </>
           ) : (
-            <span>DISCONNECTED (RS485)</span>
+            <span>DISCONNECTED ({protocolType})</span>
           )}
         </div>
       </div>

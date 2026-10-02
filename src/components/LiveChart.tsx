@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine } from 'recharts';
 import { TelemetryPoint, OperationMode, SetpointValues } from '../types/scada';
 import { LineChart as ChartIcon, Pause, Play, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -10,6 +10,7 @@ interface LiveChartProps {
   currentMode?: OperationMode;
   batTestSubMode?: 'CC' | 'CR';
   setpoints?: SetpointValues;
+  hardwareIrange?: number;
 }
 
 export const LiveChart: React.FC<LiveChartProps> = ({
@@ -18,12 +19,16 @@ export const LiveChart: React.FC<LiveChartProps> = ({
   chartRef,
   currentMode = 'CV',
   batTestSubMode = 'CC',
-  setpoints
+  setpoints,
+  hardwareIrange
 }) => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [magnifyFluctuations, setMagnifyFluctuations] = useState<boolean>(true);
 
   const modeLabel = currentMode === 'BAT TEST' ? `BAT TEST (${batTestSubMode} MODE)` : `${currentMode} MODE`;
+  const activeIrange = (hardwareIrange !== undefined && hardwareIrange > 0)
+    ? hardwareIrange
+    : (setpoints?.imax && setpoints.imax > 0 ? setpoints.imax : 10.0);
 
   // Take the last 60 data points when streaming
   const rawData = isPaused ? data : data.slice(-60);
@@ -72,6 +77,30 @@ export const LiveChart: React.FC<LiveChartProps> = ({
             <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--accent-green)', boxShadow: '0 0 6px var(--accent-green)' }}></span>
             <span>{modeLabel}</span>
           </div>
+
+          {/* For CP mode, CR mode, and CV mode: Display I_SET_RANGE_CC on graph header */}
+          {(currentMode === 'CP' || currentMode === 'CR' || currentMode === 'CV') && (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#fef3c7',
+                color: '#92400e',
+                border: '1.5px solid #fde68a',
+                padding: '3px 10px',
+                borderRadius: '16px',
+                fontSize: '0.8rem',
+                fontWeight: 800,
+                letterSpacing: '0.3px',
+                boxShadow: '0 1px 3px rgba(217, 119, 6, 0.15)'
+              }}
+              title="I_SET_RANGE_CC (4X 13 / Wire 12): CC Mode Current Range monitored from physical HMI"
+            >
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#d97706', boxShadow: '0 0 6px #d97706' }}></span>
+              <span>I_SET_RANGE_CC: {activeIrange.toFixed(3)} A</span>
+            </div>
+          )}
         </div>
 
         <div className="chart-controls">
@@ -106,7 +135,30 @@ export const LiveChart: React.FC<LiveChartProps> = ({
         </div>
       </div>
 
-      <div style={{ width: '100%', height: '360px', flex: 1, marginTop: '8px' }}>
+      {/* For CP mode, CR mode, and CV mode: Display Range Limit Information Strip on Graph */}
+      {(currentMode === 'CP' || currentMode === 'CR' || currentMode === 'CV') && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#fffbeb',
+          border: '1px solid #fef3c7',
+          borderRadius: '4px',
+          padding: '4px 10px',
+          marginBottom: '4px',
+          fontSize: '0.74rem',
+          color: '#b45309',
+          fontWeight: 700
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>⚡</span>
+            <span>Hardware Current Range (HMI): <strong>I_SET_RANGE_CC = {activeIrange.toFixed(3)} A</strong></span>
+          </div>
+          <span style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 600 }}>Physical Register 4X 13 (Wire 12)</span>
+        </div>
+      )}
+
+      <div style={{ width: '100%', height: '300px', flex: 1, marginTop: '6px' }}>
         {data.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-light)', gap: '8px' }}>
             <ChartIcon size={48} style={{ opacity: 0.3 }} />
@@ -193,6 +245,22 @@ export const LiveChart: React.FC<LiveChartProps> = ({
                 activeDot={{ r: 6, fill: '#dc2626' }}
                 isAnimationActive={false}
               />
+              {(currentMode === 'CP' || currentMode === 'CR' || currentMode === 'CV') && !magnifyFluctuations && (
+                <ReferenceLine
+                  yAxisId="right"
+                  y={activeIrange}
+                  stroke="#d97706"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  label={{
+                    value: `I_SET_RANGE_CC: ${activeIrange.toFixed(3)} A`,
+                    fill: '#b45309',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    position: 'insideTopRight'
+                  }}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         )}

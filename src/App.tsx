@@ -9,6 +9,7 @@ import { HistoryAndPdf } from './components/HistoryAndPdf';
 import { SettingsModal } from './components/SettingsModal';
 import { EngSettings } from './components/EngSettings';
 import { SequenceBuilder } from './components/SequenceBuilder';
+import { SafetyModal } from './components/SafetyModal';
 import { Zap, AlertTriangle } from 'lucide-react';
 import './styles/index.css';
 
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
   const [currentMode, setCurrentMode] = useState<OperationMode>('CV');
   const [outputState, setOutputState] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'DISCONNECTED'>('DISCONNECTED');
+  const [safetyModal, setSafetyModal] = useState<{ title?: string; message: string } | null>(null);
 
   const [sequenceProgress, setSequenceProgress] = useState<SequenceProgress>({
     state: 'IDLE',
@@ -72,7 +74,8 @@ export const App: React.FC = () => {
     isSimulator: false,
     selectedProfileId: 'CLIENT_CSV_PROFILE',
     registers: BUILTIN_PROFILES[0].registers,
-    wordSwap: true
+    wordSwap: true,
+    protocolType: 'RS485'
   });
 
   const activeProfile = BUILTIN_PROFILES.find((p) => p.id === settings.selectedProfileId) || BUILTIN_PROFILES[0];
@@ -100,15 +103,20 @@ export const App: React.FC = () => {
   const handleResetBatTest = async () => {
     if (window.electronAPI) {
       await window.electronAPI.modbus.resetBatTest();
-    } else {
-      setTelemetry((prev) => ({
-        ...prev,
-        ah: 0.0,
-        hrs: 0,
-        min: 0,
-        capacityAh: 0.0
-      }));
     }
+    setSetpoints((prev) => ({
+      ...prev,
+      ah: 0.0,
+      hrs: 0,
+      min: 0
+    }));
+    setTelemetry((prev) => ({
+      ...prev,
+      ah: 0.0,
+      hrs: 0,
+      min: 0,
+      capacityAh: 0.0
+    }));
   };
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -146,9 +154,72 @@ export const App: React.FC = () => {
     loadSessions();
   }, []);
 
+  // Synchronization helper matching RegisterDiagnosticsPanel:
+  // Converts live register values into UI state for immediate reflection
+  const syncRegistersToState = (regs: Record<string, { value: number | boolean; formatted: string }>) => {
+    setSetpoints((prev) => {
+      let updated = { ...prev };
+      if (typeof regs['VCUTOFF']?.value === 'number' && regs['VCUTOFF'].value > 0) {
+        updated.cutoffV = regs['VCUTOFF'].value;
+      }
+      if (typeof regs['AH']?.value === 'number' && regs['AH'].value >= 0) {
+        updated.ah = regs['AH'].value;
+      }
+      if (typeof regs['HRS']?.value === 'number' && regs['HRS'].value >= 0) {
+        updated.hrs = regs['HRS'].value;
+      }
+      if (typeof regs['MIN']?.value === 'number' && regs['MIN'].value >= 0) {
+        updated.min = regs['MIN'].value;
+      }
+      if (regs['CC_CR_BAT_MODE'] !== undefined) {
+        updated.batTestSubMode = regs['CC_CR_BAT_MODE'].value ? 'CR' : 'CC';
+      }
+      if (typeof regs['CV_VOLT']?.value === 'number' && regs['CV_VOLT'].value >= 0) {
+        updated.cv = regs['CV_VOLT'].value;
+      }
+      if (typeof regs['I_SET_ROW_CC']?.value === 'number' && regs['I_SET_ROW_CC'].value >= 0) {
+        updated.iset = regs['I_SET_ROW_CC'].value;
+      }
+      if (typeof regs['I_SET_RANGE_CC']?.value === 'number' && regs['I_SET_RANGE_CC'].value > 0) {
+        updated.imax = regs['I_SET_RANGE_CC'].value;
+      }
+      if (typeof regs['RESISTOR_CR_MODE']?.value === 'number' && regs['RESISTOR_CR_MODE'].value >= 0) {
+        updated.rset = regs['RESISTOR_CR_MODE'].value;
+      }
+      if (typeof regs['POWER_CP_MODE']?.value === 'number' && regs['POWER_CP_MODE'].value >= 0) {
+        updated.pset = regs['POWER_CP_MODE'].value;
+      }
+      return updated;
+    });
+
+    setEngSettings((prev) => {
+      let updated = { ...prev };
+      if (typeof regs['V_MAX']?.value === 'number' && regs['V_MAX'].value > 0) {
+        updated.vmax = regs['V_MAX'].value;
+      }
+      if (typeof regs['I_MAX']?.value === 'number' && regs['I_MAX'].value > 0) {
+        updated.imax = regs['I_MAX'].value;
+      }
+      if (typeof regs['P_MAX']?.value === 'number' && regs['P_MAX'].value > 0) {
+        updated.pmax = regs['P_MAX'].value;
+      }
+      if (typeof regs['R_MAX']?.value === 'number' && regs['R_MAX'].value > 0) {
+        updated.rmax = regs['R_MAX'].value;
+      }
+      return updated;
+    });
+  };
+
   // Listen to IPC Telemetry Streams & Sequence Engine Events
   useEffect(() => {
     if (window.electronAPI) {
+      // 1. Instantly read all registers from HMI on startup / component mount
+      window.electronAPI.modbus.diagReadAllRegisters().then((res) => {
+        if (res && res.success && res.registers) {
+          syncRegistersToState(res.registers);
+        }
+      }).catch(() => {});
+
       const unsubTelemetry = window.electronAPI.modbus.onTelemetry((point) => {
         setTelemetry(point);
 
@@ -166,6 +237,9 @@ export const App: React.FC = () => {
             return prev;
           });
         }
+        if (point.hardwareIrange !== undefined && point.hardwareIrange > 0) {
+          setSetpoints((prev) => (prev.imax !== point.hardwareIrange ? { ...prev, imax: point.hardwareIrange! } : prev));
+        }
         if (point.hardwareCvSet !== undefined && point.hardwareCvSet >= 0) {
           setSetpoints((prev) => (prev.cv !== point.hardwareCvSet ? { ...prev, cv: point.hardwareCvSet! } : prev));
         }
@@ -174,6 +248,36 @@ export const App: React.FC = () => {
         }
         if (point.hardwarePset !== undefined && point.hardwarePset >= 0) {
           setSetpoints((prev) => (prev.pset !== point.hardwarePset ? { ...prev, pset: point.hardwarePset! } : prev));
+        }
+
+        // Battery Test Mode Synchronization from physical HMI (VCUTOFF, AH, HRS, MIN, SUBMODE)
+        if (point.hardwareCutoffV !== undefined && point.hardwareCutoffV > 0) {
+          setSetpoints((prev) => (prev.cutoffV !== point.hardwareCutoffV ? { ...prev, cutoffV: point.hardwareCutoffV! } : prev));
+        }
+        if (point.hardwareAh !== undefined && point.hardwareAh >= 0) {
+          setSetpoints((prev) => (prev.ah !== point.hardwareAh ? { ...prev, ah: point.hardwareAh! } : prev));
+        }
+        if (point.hardwareHrs !== undefined && point.hardwareHrs >= 0) {
+          setSetpoints((prev) => (prev.hrs !== point.hardwareHrs ? { ...prev, hrs: point.hardwareHrs! } : prev));
+        }
+        if (point.hardwareMin !== undefined && point.hardwareMin >= 0) {
+          setSetpoints((prev) => (prev.min !== point.hardwareMin ? { ...prev, min: point.hardwareMin! } : prev));
+        }
+        if (point.hardwareBatSubMode !== undefined) {
+          setSetpoints((prev) => (prev.batTestSubMode !== point.hardwareBatSubMode ? { ...prev, batTestSubMode: point.hardwareBatSubMode! } : prev));
+        }
+
+        if (point.hardwareVmax !== undefined && point.hardwareVmax > 0) {
+          setEngSettings((prev) => (prev.vmax !== point.hardwareVmax ? { ...prev, vmax: point.hardwareVmax! } : prev));
+        }
+        if (point.hardwareImax !== undefined && point.hardwareImax > 0) {
+          setEngSettings((prev) => (prev.imax !== point.hardwareImax ? { ...prev, imax: point.hardwareImax! } : prev));
+        }
+        if (point.hardwarePmax !== undefined && point.hardwarePmax > 0) {
+          setEngSettings((prev) => (prev.pmax !== point.hardwarePmax ? { ...prev, pmax: point.hardwarePmax! } : prev));
+        }
+        if (point.hardwareRmax !== undefined && point.hardwareRmax > 0) {
+          setEngSettings((prev) => (prev.rmax !== point.hardwareRmax ? { ...prev, rmax: point.hardwareRmax! } : prev));
         }
 
         // 2-way HMI synchronization: If Output ON/OFF changed on physical hardware panel, reflect in app!
@@ -202,10 +306,10 @@ export const App: React.FC = () => {
           });
         }
 
-        // Stream points into telemetry history graph when output is ON or point has active telemetry
-        if (outputState || point.isOutputOn || point.vmon > 0 || point.imon > 0 || point.pmon > 0) {
-          setTelemetryHistory((prev) => [...prev.slice(-80), point]);
-          
+        // Stream telemetry points into live graph whenever connected
+        setTelemetryHistory((prev) => [...prev.slice(-80), point]);
+
+        if (outputState || point.isOutputOn) {
           const logs = currentSessionLogsRef.current;
           const lastTime = logs.length > 0 ? logs[logs.length - 1].timeSeconds : 0;
           const targetInterval = Math.max(1, engSettings.logIntervalSeconds || 1);
@@ -217,6 +321,13 @@ export const App: React.FC = () => {
 
       const unsubStatus = window.electronAPI.modbus.onStatusChange((status: any) => {
         setConnectionStatus(status);
+        if (status && status.connected) {
+          window.electronAPI?.modbus.diagReadAllRegisters().then((res) => {
+            if (res && res.success && res.registers) {
+              syncRegistersToState(res.registers);
+            }
+          }).catch(() => {});
+        }
       });
 
       const unsubSequence = window.electronAPI.sequence.onProgress((prog) => {
@@ -415,17 +526,28 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [outputState, currentMode, elapsedTimeSeconds, setpoints]);
 
-  // Mode Selection Handler - Locked when output is ON
+  // Mode Selection Handler - Real-time switching matching diagnostic panel
   const handleSelectMode = async (mode: OperationMode) => {
-    if (outputState) return; // Mode locked during active test!
     setCurrentMode(mode);
     if (window.electronAPI) {
-      await window.electronAPI.modbus.setMode(mode);
+      try {
+        const res = await window.electronAPI.modbus.setMode(mode, true);
+        if (res && res.success === false) {
+          console.warn('Set mode error:', res.error);
+        }
+        // Immediate sync matching diagnostic panel to reflect physical hardware setpoints for this mode
+        const diagRes = await window.electronAPI.modbus.diagReadAllRegisters();
+        if (diagRes && diagRes.success && diagRes.registers) {
+          syncRegistersToState(diagRes.registers);
+        }
+      } catch (err) {
+        console.error('Failed to set mode:', err);
+      }
     }
   };
 
   // Setpoint Update Handler - Triggered on ENTER key or SET/ENTER button click
-  const handleUpdateSetpoint = async (key: keyof SetpointValues, val: number) => {
+  const handleUpdateSetpoint = async (key: keyof SetpointValues, val: any) => {
     // Safety 1: I_SET_RANGE_CC (imax) cannot be set from PC (monitored from physical HMI only)
     if (key === 'imax') {
       console.warn('I_SET_RANGE_CC cannot be set from PC app (monitored from HMI only)');
@@ -438,40 +560,88 @@ export const App: React.FC = () => {
       return;
     }
 
-    // Safety 3: I Target cannot exceed I_SET_RANGE_CC limit
-    if (key === 'iset' && setpoints.imax > 0 && val > setpoints.imax) {
-      alert(`⚠️ Safety Limit Warning: I Target (${val} A) exceeds I_SET_RANGE_CC limit (${setpoints.imax.toFixed(3)} A)!`);
+    // Safety 3: I Target / Iset cannot exceed I_SET_RANGE_CC limit (CC mode, CP mode, BAT TEST CC mode)
+    const iRangeLimit = (telemetry.hardwareIrange !== undefined && telemetry.hardwareIrange > 0)
+      ? telemetry.hardwareIrange
+      : ((setpoints.imax > 0 ? setpoints.imax : engSettings.imax) || 10.0);
+    if (key === 'iset' && iRangeLimit > 0 && typeof val === 'number' && val > iRangeLimit) {
+      setSafetyModal({
+        title: '⚠️ Safety Limit Warning',
+        message: `⚠️ I_SET_ROW_CC (${val.toFixed(3)} A) exceeds I_SET_RANGE_CC limit (${iRangeLimit.toFixed(3)} A)! Write blocked.`
+      });
+      setSetpoints((prev) => ({ ...prev }));
       return;
     }
 
-    // Safety 4: Resistance cannot exceed R_MAX limit
-    if (key === 'rset' && engSettings.rmax > 0 && val > engSettings.rmax) {
-      alert(`⚠️ Safety Limit Warning: Resistance (${val} Ω) exceeds R_MAX limit (${engSettings.rmax.toFixed(2)} Ω)!`);
+    // Safety 4: Resistance cannot exceed R_MAX limit (CR mode, BAT TEST CR mode)
+    const rMaxLimit = (telemetry.hardwareRmax !== undefined && telemetry.hardwareRmax > 0)
+      ? telemetry.hardwareRmax
+      : (engSettings.rmax || 100.0);
+    if (key === 'rset' && rMaxLimit > 0 && typeof val === 'number' && val > rMaxLimit) {
+      setSafetyModal({
+        title: '⚠️ Safety Limit Warning',
+        message: `⚠️ RESISTOR_CR_MODE (${val.toFixed(2)} Ω) exceeds R_MAX limit (${rMaxLimit.toFixed(2)} Ω)! Write blocked.`
+      });
+      setSetpoints((prev) => ({ ...prev }));
       return;
     }
 
-    // Safety 5: Cutoff Voltage cannot exceed V_MAX limit
-    if (key === 'cutoffV' && engSettings.vmax > 0 && val > engSettings.vmax) {
-      alert(`⚠️ Safety Limit Warning: Cutoff Voltage (${val} V) exceeds V_MAX limit (${engSettings.vmax.toFixed(2)} V)!`);
+    // Safety 5: Cutoff Voltage cannot exceed V_MAX limit (BAT TEST mode)
+    const vMaxLimit = (telemetry.hardwareVmax !== undefined && telemetry.hardwareVmax > 0)
+      ? telemetry.hardwareVmax
+      : (engSettings.vmax || 60.0);
+    if (key === 'cutoffV' && vMaxLimit > 0 && typeof val === 'number' && val > vMaxLimit) {
+      setSafetyModal({
+        title: '⚠️ Safety Limit Warning',
+        message: `⚠️ VCUTOFF (${val.toFixed(2)} V) exceeds V_MAX limit (${vMaxLimit.toFixed(2)} V)! Write blocked.`
+      });
+      setSetpoints((prev) => ({ ...prev }));
       return;
     }
 
     // Safety 6: Power cannot exceed P_MAX limit
-    if (key === 'pset' && engSettings.pmax > 0 && val > engSettings.pmax) {
-      alert(`⚠️ Safety Limit Warning: Power (${val} W) exceeds P_MAX limit (${engSettings.pmax.toFixed(1)} W)!`);
+    const pMaxLimit = (telemetry.hardwarePmax !== undefined && telemetry.hardwarePmax > 0)
+      ? telemetry.hardwarePmax
+      : (engSettings.pmax || 5000.0);
+    if (key === 'pset' && pMaxLimit > 0 && typeof val === 'number' && val > pMaxLimit) {
+      setSafetyModal({
+        title: '⚠️ Safety Limit Warning',
+        message: `⚠️ POWER_CP_MODE (${val.toFixed(1)} W) exceeds P_MAX limit (${pMaxLimit.toFixed(1)} W)! Write blocked.`
+      });
+      setSetpoints((prev) => ({ ...prev }));
+      return;
+    }
+
+    // Safety 7: CV Voltage cannot exceed V_MAX limit (matching diagnostic panel safety enforcement)
+    if (key === 'cv' && vMaxLimit > 0 && typeof val === 'number' && val > vMaxLimit) {
+      setSafetyModal({
+        title: '⚠️ Safety Limit Warning',
+        message: `⚠️ CV_VOLT (${val.toFixed(3)} V) exceeds V_MAX limit (${vMaxLimit.toFixed(2)} V)! Write blocked.`
+      });
+      setSetpoints((prev) => ({ ...prev }));
       return;
     }
 
     const updated = { ...setpoints, [key]: val };
     setSetpoints(updated);
 
-    if (connectionStatus === 'CONNECTED' && window.electronAPI) {
+    if (window.electronAPI) {
       try {
         console.log(`[Setpoint Write] Writing ${key} = ${val} to RS485...`);
         // Crucial: Only pass the specific changed setpoint so Modbus writes only that register!
-        await window.electronAPI.modbus.writeSetpoints({ [key]: val });
-      } catch (e) {
+        const res = await window.electronAPI.modbus.writeSetpoints({ [key]: val });
+        if (res && res.success === false) {
+          setSafetyModal({
+            title: '⚠️ Setpoint Write Failed',
+            message: res.error || 'Modbus communication error'
+          });
+        }
+      } catch (e: any) {
         console.warn('RS485 write setpoint error:', e);
+        setSafetyModal({
+          title: '⚠️ Communication Error',
+          message: e?.message || 'RS485 serial communication error'
+        });
       }
     }
   };
@@ -480,31 +650,42 @@ export const App: React.FC = () => {
   const handleSaveEngSettings = async (newEng: EngineeringSettings) => {
     setEngSettings(newEng);
     if (window.electronAPI) {
-      await window.electronAPI.modbus.writeEngSettings(newEng);
+      try {
+        const res = await window.electronAPI.modbus.writeEngSettings(newEng);
+        if (res && res.success === false) {
+          setSafetyModal({
+            title: '⚠️ Engineering Settings Write Failed',
+            message: res.error || 'Failed to write engineering settings to hardware'
+          });
+        }
+      } catch (err: any) {
+        setSafetyModal({
+          title: '⚠️ Communication Error',
+          message: err?.message || 'RS485 serial communication error'
+        });
+      }
     }
   };
 
   // Output ON / OFF Toggle Handler with Hardware Compatibility Lock & State Verification
   const handleToggleOutput = async (state: boolean) => {
     if (state && !isAuthorized) {
-      alert(`HARDWARE VALIDATION RESTRICTION: Physical hardware has not been tested for device profile "${activeProfile.name}". Output control is strictly disabled.`);
+      setSafetyModal({
+        title: '⚠️ Hardware Validation Restriction',
+        message: `HARDWARE VALIDATION RESTRICTION: Physical hardware has not been tested for device profile "${activeProfile.name}". Output control is strictly disabled.`
+      });
       return;
     }
 
-    if (!state) {
-      // User clicked OUTPUT OFF:
-      // Immediately reset live telemetry display to 0.00 V / 0.00 A to suppress floating sensor noise
-      const timeStr = new Date().toTimeString().split(' ')[0];
-      const timeSec = Math.floor(Date.now() / 1000);
-      const zeroPt: TelemetryPoint = { timestamp: timeStr, timeSeconds: timeSec, vmon: 0.00, imon: 0.00, pmon: 0.00, isOutputOn: false };
-      setTelemetry(zeroPt);
-      setTelemetryHistory([zeroPt]);
-    }
+
 
     if (window.electronAPI) {
       const res: any = await window.electronAPI.modbus.setOutput(state);
       if (res && res.success === false) {
-        alert(res.error || 'Failed to toggle output!');
+        setSafetyModal({
+          title: '⚠️ Output Command Failed',
+          message: res.error || 'Failed to toggle output!'
+        });
         return;
       }
     }
@@ -528,13 +709,7 @@ export const App: React.FC = () => {
         timerRef.current = null;
       }
 
-      // Immediately reset live telemetry and graph history back flat to 0.00V and 0.00A
-      const timeStr = new Date().toTimeString().split(' ')[0];
-      const timeSec = Math.floor(Date.now() / 1000);
-      const zeroPt = { timestamp: timeStr, timeSeconds: timeSec, vmon: 0.00, imon: 0.00, pmon: 0.00 };
 
-      setTelemetry(zeroPt);
-      setTelemetryHistory([zeroPt]);
 
       const logs = [...currentSessionLogsRef.current];
       if (logs.length > 0) {
@@ -590,7 +765,11 @@ export const App: React.FC = () => {
     setSettings(newSettings);
     if (window.electronAPI) {
       const res = await window.electronAPI.modbus.connect(newSettings);
-      return typeof res === 'boolean' ? res : (res?.success ?? false);
+      const isOk = typeof res === 'boolean' ? res : (res?.success ?? false);
+      if (isOk) {
+        setConnectionStatus('CONNECTED');
+      }
+      return isOk;
     } else {
       setConnectionStatus('CONNECTED');
       return true;
@@ -612,6 +791,7 @@ export const App: React.FC = () => {
         batTestSubMode={setpoints.batTestSubMode}
         connectionStatus={connectionStatus}
         activeTab={activeView}
+        protocolType={settings.protocolType || 'RS485'}
       />
 
       <NavigationTabs
@@ -619,7 +799,8 @@ export const App: React.FC = () => {
         onSelectMode={handleSelectMode}
         activeView={activeView}
         onSelectView={setActiveView}
-        isTestRunning={outputState || isSequenceRunning}
+        isTestRunning={isSequenceRunning}
+        protocolType={settings.protocolType || 'RS485'}
       />
 
       {activeView === 'dashboard' && (
@@ -651,6 +832,7 @@ export const App: React.FC = () => {
 
             <MetricsGrid
               currentMode={isSequenceRunning ? sequenceProgress.currentMode : currentMode}
+              onSelectMode={handleSelectMode}
               telemetry={telemetry}
               setpoints={setpoints}
               engSettings={engSettings}
@@ -678,6 +860,7 @@ export const App: React.FC = () => {
             currentMode={isSequenceRunning ? sequenceProgress.currentMode : currentMode}
             batTestSubMode={setpoints.batTestSubMode}
             setpoints={setpoints}
+            hardwareIrange={telemetry.hardwareIrange}
           />
         </main>
       )}
@@ -865,6 +1048,14 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {safetyModal && (
+        <SafetyModal
+          title={safetyModal.title}
+          message={safetyModal.message}
+          onClose={() => setSafetyModal(null)}
+        />
       )}
     </div>
   );

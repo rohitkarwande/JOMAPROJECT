@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   modbus: {
     connect: (config: ConnectionSettings) => ipcRenderer.invoke('modbus:connect', config),
     disconnect: () => ipcRenderer.invoke('modbus:disconnect'),
-    setMode: (mode: OperationMode) => ipcRenderer.invoke('modbus:setMode', mode),
+    setMode: (mode: OperationMode, force?: boolean) => ipcRenderer.invoke('modbus:setMode', mode, force),
     writeSetpoints: (setpoints: Partial<SetpointValues>) => ipcRenderer.invoke('modbus:writeSetpoints', setpoints),
     writeEngSettings: (engSettings: any) => ipcRenderer.invoke('modbus:writeEngSettings', engSettings),
     setOutput: (state: boolean) => ipcRenderer.invoke('modbus:setOutput', state),

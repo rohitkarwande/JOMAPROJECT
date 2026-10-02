@@ -10,6 +10,7 @@ interface NavigationTabsProps {
   activeView: ActiveViewType;
   onSelectView: (view: ActiveViewType) => void;
   isTestRunning?: boolean;
+  protocolType?: 'RS485' | 'RS232';
 }
 
 const MODES: { id: OperationMode; label: string; icon: React.ReactNode }[] = [
@@ -26,6 +27,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
   activeView,
   onSelectView,
   isTestRunning = false,
+  protocolType = 'RS485',
 }) => {
   return (
     <div className="mode-tabs-bar">
@@ -36,14 +38,6 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
       >
         <LayoutDashboard size={18} />
         <span>Control Dashboard</span>
-      </button>
-
-      <button
-        className={`btn-nav-tab ${activeView === 'sequence' ? 'active' : ''}`}
-        onClick={() => onSelectView('sequence')}
-      >
-        <ListChecks size={18} />
-        <span>Test Sequence</span>
       </button>
 
       <button
@@ -67,7 +61,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
         onClick={() => onSelectView('settings')}
       >
         <Settings size={18} />
-        <span>RS485 Settings</span>
+        <span>{protocolType} Settings</span>
       </button>
 
       <div style={{ width: '1px', background: 'rgba(51, 65, 85, 0.6)', margin: '0 8px' }} />

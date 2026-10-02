@@ -42,16 +42,16 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
   const [isJustSaved, setIsJustSaved] = useState<boolean>(false);
   const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Sync from props only when not actively typing/focused or dirty
+  // Sync from props whenever not actively typing (isDirty is false)
   useEffect(() => {
-    if (!isFocused && !isDirty) {
+    if (!isDirty) {
       if (value === undefined || value === null || isNaN(value)) {
         setTextValue('');
       } else {
         setTextValue(precision !== undefined ? value.toFixed(precision) : String(value));
       }
     }
-  }, [value, precision, isFocused, isDirty]);
+  }, [value, precision, isDirty]);
 
   useEffect(() => {
     return () => {
@@ -114,10 +114,12 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
 
   const handleBlur = () => {
     setIsFocused(false);
-    // When blur happens, if not commitOnEnterOnly we commit.
-    // If commitOnEnterOnly is true, we keep dirty state so user can still click the ENTER button!
     if (!commitOnEnterOnly) {
       commitValue();
+    } else if (isDirty) {
+      // If dirty text was not confirmed on Enter, revert to confirmed prop value
+      setIsDirty(false);
+      setTextValue(precision !== undefined && value !== undefined ? value.toFixed(precision) : String(value ?? ''));
     }
   };
 
@@ -132,12 +134,10 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
     if (e.key === 'Enter') {
       e.preventDefault();
       commitValue();
-      (e.target as HTMLInputElement).blur();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setIsDirty(false);
       setTextValue(precision !== undefined && value !== undefined ? value.toFixed(precision) : String(value ?? ''));
-      (e.target as HTMLInputElement).blur();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const current = parseFloat(textValue) || (min ?? 0);
@@ -165,6 +165,28 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
     }
   };
 
+  const baseInputStyle: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    height: '44px',
+    minHeight: '44px',
+    padding: '6px 14px',
+    fontSize: '1.25rem',
+    fontWeight: 700,
+    fontFamily: 'var(--font-mono, monospace)',
+    background: disabled ? '#f1f5f9' : '#ffffff',
+    color: disabled ? '#94a3b8' : '#0f172a',
+    border: isFocused ? '2px solid #0284c7' : '1.5px solid #cbd5e1',
+    borderRadius: '6px',
+    outline: 'none',
+    boxShadow: isFocused ? '0 0 0 3px rgba(2, 132, 199, 0.2)' : 'none',
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+    userSelect: 'text',
+    WebkitUserSelect: 'text',
+    boxSizing: 'border-box',
+    ...style,
+  };
+
   if (!showEnterButton) {
     return (
       <input
@@ -178,17 +200,13 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
         onFocus={handleFocus}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        style={{
-          userSelect: 'text',
-          WebkitUserSelect: 'text',
-          ...style,
-        }}
+        style={baseInputStyle}
       />
     );
   }
 
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', flex: 1, minWidth: 0, position: 'relative' }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box', position: 'relative' }}>
       <input
         type="text"
         inputMode="decimal"
@@ -201,11 +219,9 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         style={{
-          flex: 1,
+          ...baseInputStyle,
           minWidth: 0,
-          userSelect: 'text',
-          WebkitUserSelect: 'text',
-          ...style,
+          width: '100%',
         }}
       />
       <button
@@ -221,16 +237,17 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '3px',
-          padding: '3px 8px',
+          padding: '0 10px',
           marginLeft: '6px',
-          height: '28px',
-          borderRadius: '4px',
-          border: isJustSaved ? '1px solid #16a34a' : isDirty ? '1px solid #0284c7' : '1px solid #cbd5e1',
-          fontSize: '0.74rem',
+          height: '44px',
+          borderRadius: '6px',
+          border: isJustSaved ? '1.5px solid #16a34a' : isDirty ? '1.5px solid #0284c7' : '1.5px solid #cbd5e1',
+          fontSize: '0.8rem',
           fontWeight: 800,
+          letterSpacing: '0.3px',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          background: isJustSaved ? '#16a34a' : isDirty ? '#0284c7' : '#f1f5f9',
-          color: isJustSaved || isDirty ? '#ffffff' : '#64748b',
+          background: isJustSaved ? '#16a34a' : isDirty ? '#0284c7' : '#f8fafc',
+          color: isJustSaved || isDirty ? '#ffffff' : '#475569',
           boxShadow: isDirty ? '0 2px 6px rgba(2, 132, 199, 0.35)' : 'none',
           transition: 'all 0.15s ease',
           flexShrink: 0
@@ -239,12 +256,12 @@ export const KeyboardNumericInput: React.FC<KeyboardNumericInputProps> = ({
       >
         {isJustSaved ? (
           <>
-            <Check size={12} />
+            <Check size={14} />
             <span>SET</span>
           </>
         ) : (
           <>
-            <CornerDownLeft size={12} />
+            <CornerDownLeft size={14} />
             <span>ENTER</span>
           </>
         )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { EngineeringSettings } from '../types/scada';
 import { ShieldAlert, Check, Save } from 'lucide-react';
 import { JomaLogo } from './JomaLogo';
@@ -17,9 +17,12 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const isDirtyRef = useRef<boolean>(false);
 
   useEffect(() => {
-    setLocalEng(engSettings);
+    if (!isDirtyRef.current) {
+      setLocalEng(engSettings);
+    }
   }, [engSettings]);
 
   useEffect(() => {
@@ -39,10 +42,12 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
   }, []);
 
   const handleChange = (key: keyof EngineeringSettings, val: number) => {
+    isDirtyRef.current = true;
     setLocalEng((prev) => ({ ...prev, [key]: val }));
   };
 
   const handleSave = () => {
+    isDirtyRef.current = false;
     onSaveEngSettings(localEng);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
@@ -101,17 +106,21 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
         >
           {/* Vmax Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span
-              style={{
-                fontFamily: "'Times New Roman', serif",
-                fontWeight: 700,
-                fontSize: '2.2rem',
-                minWidth: '140px',
-                color: '#000000'
-              }}
-            >
-              Vmax :
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '160px' }}>
+              <span
+                style={{
+                  fontFamily: "'Times New Roman', serif",
+                  fontWeight: 700,
+                  fontSize: '2.0rem',
+                  color: '#000000'
+                }}
+              >
+                Vmax :
+              </span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0369a1' }}>
+                V_MAX (4X 7 / Wire 6)
+              </span>
+            </div>
             <div
               style={{
                 flex: 1,
@@ -122,8 +131,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
               }}
             >
               <KeyboardNumericInput
-                step={0.1}
-                precision={3}
+                step={1.0}
+                precision={2}
+                showEnterButton={false}
+                commitOnEnterOnly={false}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -143,17 +154,21 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
 
           {/* Pmax Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span
-              style={{
-                fontFamily: "'Times New Roman', serif",
-                fontWeight: 700,
-                fontSize: '2.2rem',
-                minWidth: '140px',
-                color: '#000000'
-              }}
-            >
-              Pmax :
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '160px' }}>
+              <span
+                style={{
+                  fontFamily: "'Times New Roman', serif",
+                  fontWeight: 700,
+                  fontSize: '2.0rem',
+                  color: '#000000'
+                }}
+              >
+                Pmax :
+              </span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0369a1' }}>
+                P_MAX (4X 11 / Wire 10)
+              </span>
+            </div>
             <div
               style={{
                 flex: 1,
@@ -164,8 +179,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
               }}
             >
               <KeyboardNumericInput
-                step={10}
+                step={50.0}
                 precision={1}
+                showEnterButton={false}
+                commitOnEnterOnly={false}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -185,17 +202,21 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
 
           {/* Imax Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span
-              style={{
-                fontFamily: "'Times New Roman', serif",
-                fontWeight: 700,
-                fontSize: '2.2rem',
-                minWidth: '140px',
-                color: '#000000'
-              }}
-            >
-              Imax :
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '160px' }}>
+              <span
+                style={{
+                  fontFamily: "'Times New Roman', serif",
+                  fontWeight: 700,
+                  fontSize: '2.0rem',
+                  color: '#000000'
+                }}
+              >
+                Imax :
+              </span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0369a1' }}>
+                I_MAX (4X 9 / Wire 8)
+              </span>
+            </div>
             <div
               style={{
                 flex: 1,
@@ -206,8 +227,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
               }}
             >
               <KeyboardNumericInput
-                step={0.1}
-                precision={3}
+                step={1.0}
+                precision={2}
+                showEnterButton={false}
+                commitOnEnterOnly={false}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -227,17 +250,21 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
 
           {/* Rmax Row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span
-              style={{
-                fontFamily: "'Times New Roman', serif",
-                fontWeight: 700,
-                fontSize: '2.2rem',
-                minWidth: '140px',
-                color: '#000000'
-              }}
-            >
-              Rmax :
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '160px' }}>
+              <span
+                style={{
+                  fontFamily: "'Times New Roman', serif",
+                  fontWeight: 700,
+                  fontSize: '2.0rem',
+                  color: '#000000'
+                }}
+              >
+                Rmax :
+              </span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0369a1' }}>
+                R_MAX (4X 30 / Wire 29)
+              </span>
+            </div>
             <div
               style={{
                 flex: 1,
@@ -248,8 +275,10 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
               }}
             >
               <KeyboardNumericInput
-                step={1}
+                step={1.0}
                 precision={2}
+                showEnterButton={false}
+                commitOnEnterOnly={false}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -293,6 +322,8 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 min={0.01}
                 step={0.1}
                 precision={3}
+                showEnterButton={false}
+                commitOnEnterOnly={false}
                 style={{
                   width: '100%',
                   background: 'transparent',
@@ -306,6 +337,7 @@ export const EngSettings: React.FC<EngSettingsProps> = ({
                 }}
                 value={localEng.logIntervalMinutes ?? (localEng.logIntervalSeconds ? +(localEng.logIntervalSeconds / 60).toFixed(3) : 1)}
                 onChange={(num) => {
+                  isDirtyRef.current = true;
                   setLocalEng((prev) => ({
                     ...prev,
                     logIntervalMinutes: num,

@@ -57,10 +57,20 @@ export interface TelemetryPoint {
   popPowerExceed?: boolean; // Popup alarm 0X3
   popVoltExceed?: boolean;  // Popup alarm 0X4
   hardwareMode?: OperationMode; // Active Mode read from HMI (4X 29)
-  hardwareIlimit?: number;      // Active I LIMIT read from HMI (4X 15)
+  hardwareIlimit?: number;      // Active I_SET_ROW_CC (I Target / I Limit) read from HMI (4X 15)
+  hardwareIrange?: number;      // Active I_SET_RANGE_CC (I MAX CC Mode) read from HMI (4X 13)
   hardwareCvSet?: number;       // Active CV SET read from HMI (4X 5)
   hardwareRset?: number;        // Active R SET read from HMI (4X 17)
   hardwarePset?: number;        // Active P SET read from HMI (4X 19)
+  hardwareVmax?: number;        // Active V_MAX read from HMI (4X 7)
+  hardwareImax?: number;        // Active I_MAX read from HMI (4X 9)
+  hardwarePmax?: number;        // Active P_MAX read from HMI (4X 11)
+  hardwareRmax?: number;        // Active R_MAX read from HMI (4X 30)
+  hardwareCutoffV?: number;     // Active VCUTOFF read from HMI (4X 21)
+  hardwareAh?: number;          // Active AH read from HMI (4X 27)
+  hardwareHrs?: number;         // Active HRS read from HMI (4X 23)
+  hardwareMin?: number;         // Active MIN read from HMI (4X 25)
+  hardwareBatSubMode?: 'CC' | 'CR'; // Active CC_CR_BAT_MODE read from HMI (0X 2)
   deviceResponding?: boolean; // True if slave device is acknowledging Modbus queries
 }
 
@@ -88,6 +98,7 @@ export interface ConnectionSettings {
   customCurrentScale?: number;
   customOutputControlFc?: 5 | 6;
   wordSwap?: boolean; // true = Word-Swapped (Low Word First / CDAB), false = Big Endian (High Word First / ABCD)
+  protocolType?: 'RS485' | 'RS232';
 }
 
 export interface RegisterOffsets {

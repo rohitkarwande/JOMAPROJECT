@@ -259,11 +259,14 @@ input, textarea, select {
   background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  gap: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
 }
 
 .setpoint-card:focus-within {
@@ -272,40 +275,62 @@ input, textarea, select {
 }
 
 .setpoint-label {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #334155;
   text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: 6px;
+  letter-spacing: 0.3px;
 }
 
 .setpoint-input-wrapper {
   display: flex;
   align-items: center;
   background: #f8fafc;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+.setpoint-input-wrapper:hover {
+  border-color: #94a3b8;
 }
 
 .setpoint-input {
   width: 100%;
-  background: transparent;
-  border: none;
+  height: 44px;
+  min-height: 44px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 14px;
   color: var(--text-main);
   font-family: var(--font-mono);
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   outline: none;
   font-weight: 700;
+  box-sizing: border-box;
+}
+
+.setpoint-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .setpoint-unit {
   color: var(--accent-blue);
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 1.15rem;
   font-family: var(--font-main);
-  margin-left: 6px;
+  margin-left: 8px;
+  min-width: 24px;
+  text-align: center;
 }
 
 /* Output Control Panel */
@@ -495,11 +520,17 @@ input, textarea, select {
 
 .dashboard-layout {
   display: grid;
-  grid-template-columns: 350px 1fr;
+  grid-template-columns: 520px 1fr;
   gap: 20px;
   padding: 16px 20px;
   flex: 1;
   min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .dashboard-layout {
+    grid-template-columns: 460px 1fr;
+  }
 }
 
 @media (max-width: 1024px) {
@@ -519,11 +550,11 @@ input, textarea, select {
   background: #ffffff;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 16px 20px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  min-height: 460px;
+  min-height: 380px;
   min-width: 0;
   overflow: hidden;
 }

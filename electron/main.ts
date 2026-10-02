@@ -186,8 +186,8 @@ ipcMain.handle('modbus:disconnect', async () => {
   return true;
 });
 
-ipcMain.handle('modbus:setMode', async (_, mode) => {
-  return modbusService.setMode(mode);
+ipcMain.handle('modbus:setMode', async (_, mode, force) => {
+  return modbusService.setMode(mode, force);
 });
 
 ipcMain.handle('modbus:writeSetpoints', async (_, setpoints) => {

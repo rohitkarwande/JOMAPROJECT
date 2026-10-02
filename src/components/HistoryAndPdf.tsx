@@ -311,9 +311,6 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
     doc.text(`Hardware Profile: ${session.deviceProfileName || 'JOMA Power Simulator'}`, 14, currentY + 12);
     doc.text(`Duration: ${formatDuration(session.durationSeconds)}`, pageWidth / 2 + 10, currentY);
     doc.text(`Status: ${session.status}`, pageWidth / 2 + 10, currentY + 6);
-    if (session.capacityAh) {
-      doc.text(`Capacity (Ah): ${session.capacityAh.toFixed(3)} Ah`, pageWidth / 2 + 10, currentY + 12);
-    }
 
     currentY += 22;
 
@@ -537,7 +534,6 @@ export const HistoryAndPdf: React.FC<HistoryAndPdfProps> = ({
                   <p><strong>Duration:</strong> {formatDuration(selectedSession.durationSeconds)}</p>
                   <p><strong>Status:</strong> {selectedSession.status}</p>
                   {selectedSession.isSequenceTest && <p><strong>Configured Cycles:</strong> {selectedSession.sequenceCycles || 1}</p>}
-                  {selectedSession.capacityAh && <p><strong>Capacity (Ah):</strong> {selectedSession.capacityAh.toFixed(3)} Ah</p>}
                 </div>
               </div>
 

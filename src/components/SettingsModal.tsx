@@ -170,7 +170,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontWeight: 800, fontSize: '1.2rem', letterSpacing: '0.5px' }}>
             <Radio size={22} style={{ color: '#38bdf8' }} />
-            <span>RS485 SERIAL COM PORT CONNECTION</span>
+            <span>{localSettings.protocolType || 'RS485'} SERIAL COM PORT CONNECTION</span>
           </div>
 
           <div style={{
@@ -186,12 +186,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
           }}>
             <Activity size={16} />
-            <span>{isConnected ? `CONNECTED (${localSettings.port || 'COM3'})` : 'DISCONNECTED'}</span>
+            <span>{isConnected ? `CONNECTED (${localSettings.protocolType || 'RS485'} - ${localSettings.port || 'COM3'})` : `DISCONNECTED (${localSettings.protocolType || 'RS485'})`}</span>
           </div>
         </div>
 
         <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '20px', background: '#f8fafc' }}>
           
+          {/* Hardware Serial Protocol Selector (RS-485 vs RS-232) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#ffffff',
+            padding: '12px 18px',
+            borderRadius: '8px',
+            border: '1.5px solid #cbd5e1',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                SERIAL BUS PROTOCOL INTERFACE
+              </span>
+              <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                Select physical serial communication standard for hardware link
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '6px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  handleChange('protocolType', 'RS485');
+                  if (isConnected) {
+                    handleApplySettings({ protocolType: 'RS485' });
+                  }
+                }}
+                style={{
+                  padding: '8px 22px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  background: (localSettings.protocolType || 'RS485') === 'RS485' ? '#0284c7' : 'transparent',
+                  color: (localSettings.protocolType || 'RS485') === 'RS485' ? '#ffffff' : '#64748b',
+                  boxShadow: (localSettings.protocolType || 'RS485') === 'RS485' ? '0 2px 6px rgba(2, 132, 199, 0.35)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                RS-485
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleChange('protocolType', 'RS232');
+                  if (isConnected) {
+                    handleApplySettings({ protocolType: 'RS232' });
+                  }
+                }}
+                style={{
+                  padding: '8px 22px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  background: localSettings.protocolType === 'RS232' ? '#0284c7' : 'transparent',
+                  color: localSettings.protocolType === 'RS232' ? '#ffffff' : '#64748b',
+                  boxShadow: localSettings.protocolType === 'RS232' ? '0 2px 6px rgba(2, 132, 199, 0.35)' : 'none',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                RS-232
+              </button>
+            </div>
+          </div>
+
           {/* Connection Mode Selection Tabs */}
           <div style={{ display: 'flex', gap: '10px', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
             <button
