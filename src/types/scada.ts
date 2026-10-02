@@ -58,6 +58,9 @@ export interface TelemetryPoint {
   popVoltExceed?: boolean;  // Popup alarm 0X4
   hardwareMode?: OperationMode; // Active Mode read from HMI (4X 29)
   hardwareIlimit?: number;      // Active I LIMIT read from HMI (4X 15)
+  hardwareCvSet?: number;       // Active CV SET read from HMI (4X 5)
+  hardwareRset?: number;        // Active R SET read from HMI (4X 17)
+  hardwarePset?: number;        // Active P SET read from HMI (4X 19)
   deviceResponding?: boolean; // True if slave device is acknowledging Modbus queries
 }
 

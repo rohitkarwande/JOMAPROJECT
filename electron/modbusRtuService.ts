@@ -320,6 +320,9 @@ export class ModbusRtuService {
       this.isCommFault = false;
       this.consecutiveErrors = 0;
 
+      // Instantly sync initial setpoints from physical HMI (CV_VOLT, I_SET_ROW_CC, V_MAX, etc.)
+      await this.syncHardwareSetpointsOnConnect();
+
       if (this.statusCallback) {
         this.statusCallback('CONNECTED');
       }
@@ -342,6 +345,55 @@ export class ModbusRtuService {
         this.statusCallback('DISCONNECTED');
       }
       return false;
+    }
+  }
+
+  private async syncHardwareSetpointsOnConnect(): Promise<void> {
+    if (!this.modbusClient || !this.modbusClient.isOpen) return;
+
+    try {
+      const isBase1 = this.settings.registers.addressBase === 1 || this.settings.registers.vmon === 1;
+      const baseH = isBase1 ? 1 : 0;
+
+      // Read holding registers 0-16 for initial setpoint sync on connect
+      const res1 = await this.modbusClient.readHoldingRegisters(baseH, 16);
+      if (res1 && res1.data && res1.data.length >= 16) {
+        const cvVolt = this.readFloatFromBuffer(res1.data, 4);    // 4X 5 (CV_VOLT)
+        const vMax = this.readFloatFromBuffer(res1.data, 6);      // 4X 7 (V_MAX)
+        const iMax = this.readFloatFromBuffer(res1.data, 8);      // 4X 9 (I_MAX)
+        const pMax = this.readFloatFromBuffer(res1.data, 10);     // 4X 11 (P_MAX)
+        const iRange = this.readFloatFromBuffer(res1.data, 12);   // 4X 13 (I_SET_RANGE_CC)
+        const iRow = this.readFloatFromBuffer(res1.data, 14);     // 4X 15 (I_SET_ROW_CC)
+
+        if (!isNaN(cvVolt) && cvVolt >= 0) this.setpoints.cv = cvVolt;
+        if (!isNaN(iRow) && iRow >= 0) this.setpoints.iset = iRow;
+        if (!isNaN(iRange) && iRange >= 0) this.setpoints.imax = iRange;
+        if (!isNaN(vMax) && vMax > 0) this.engSettings.vmax = vMax;
+        if (!isNaN(iMax) && iMax > 0) this.engSettings.imax = iMax;
+        if (!isNaN(pMax) && pMax > 0) this.engSettings.pmax = pMax;
+      }
+
+      await new Promise((r) => setTimeout(r, 20));
+
+      // Read holding registers 16-31 for CR / CP / BAT setpoints and R_MAX
+      try {
+        const res2 = await this.modbusClient.readHoldingRegisters(baseH + 16, 15);
+        if (res2 && res2.data && res2.data.length >= 15) {
+          const rCr = this.readFloatFromBuffer(res2.data, 0);       // 4X 17 (RESISTOR_CR_MODE)
+          const pCp = this.readFloatFromBuffer(res2.data, 2);       // 4X 19 (POWER_CP_MODE)
+          const vCut = this.readFloatFromBuffer(res2.data, 4);      // 4X 21 (VCUTOFF)
+          const rMax = this.readFloatFromBuffer(res2.data, 13);     // 4X 30 (R_MAX)
+
+          if (!isNaN(rCr) && rCr >= 0) this.setpoints.rset = rCr;
+          if (!isNaN(pCp) && pCp >= 0) this.setpoints.pset = pCp;
+          if (!isNaN(vCut) && vCut >= 0) this.setpoints.cutoffV = vCut;
+          if (!isNaN(rMax) && rMax > 0) this.engSettings.rmax = rMax;
+
+          console.log(`[RS485 Connect Sync] Synced CR Setpoints: RESISTOR_CR_MODE=${rCr}Ω, R_MAX=${rMax}Ω`);
+        }
+      } catch (e2) {}
+    } catch (err) {
+      console.warn('[RS485 Connect Sync] Initial setpoint read warning:', err);
     }
   }
 
@@ -1221,6 +1273,38 @@ export class ModbusRtuService {
           await this.setOutput(false);
         }
 
+        // Read RESISTOR_CR_MODE (4X 17 / Wire 16) when in CR Mode to sync R setpoint set on HMI
+        let hardwareRset: number | undefined = undefined;
+        if (this.currentMode === 'CR' || hardwareMode === 'CR') {
+          try {
+            const rsetAddr = this.settings.registers.rset ?? 16;
+            const rsetRes = await this.modbusClient.readHoldingRegisters(rsetAddr, 2);
+            if (rsetRes && rsetRes.data && rsetRes.data.length >= 2) {
+              const parsedRset = this.readFloatFromBuffer(rsetRes.data, 0);
+              if (!isNaN(parsedRset) && isFinite(parsedRset) && parsedRset >= 0) {
+                hardwareRset = parsedRset;
+                this.setpoints.rset = parsedRset;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Read POWER_CP_MODE (4X 19 / Wire 18) when in CP Mode to sync P setpoint set on HMI
+        let hardwarePset: number | undefined = undefined;
+        if (this.currentMode === 'CP' || hardwareMode === 'CP') {
+          try {
+            const psetAddr = this.settings.registers.pset ?? 18;
+            const psetRes = await this.modbusClient.readHoldingRegisters(psetAddr, 2);
+            if (psetRes && psetRes.data && psetRes.data.length >= 2) {
+              const parsedPset = this.readFloatFromBuffer(psetRes.data, 0);
+              if (!isNaN(parsedPset) && isFinite(parsedPset) && parsedPset >= 0) {
+                hardwarePset = parsedPset;
+                this.setpoints.pset = parsedPset;
+              }
+            }
+          } catch (e) {}
+        }
+
         return {
           timestamp: timeStr,
           timeSeconds: timeSec,
@@ -1236,6 +1320,8 @@ export class ModbusRtuService {
           popVoltExceed,
           hardwareMode,
           hardwareIlimit,
+          hardwareRset,
+          hardwarePset,
           isStale: false,
           deviceResponding: true
         };

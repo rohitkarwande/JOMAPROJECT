@@ -37,13 +37,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
 
   const modeLabel = currentMode === 'BAT TEST' ? `BAT TEST (${setpoints.batTestSubMode} MODE)` : `${currentMode} MODE`;
 
-  const parseVal = (valStr: string) => {
-    if (valStr === '') return 0;
-    const num = parseFloat(valStr);
-    return isNaN(num) ? 0 : num;
-  };
-
-  // Inline Safety Limit Exceeded Checks
+  // Inline Safety Limit Exceeded Checks matching Diagnostic Panel conventions
   const vmax = engSettings?.vmax ?? 60.0;
   const imax = engSettings?.imax ?? 30.0;
   const rmax = engSettings?.rmax ?? 100.0;
@@ -51,7 +45,6 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
 
   const isCvExceeded = setpoints.cv > vmax;
   const isCcTargetExceeded = currentMode === 'CC' && (setpoints.iset > setpoints.imax || setpoints.iset > imax);
-  const isCcImaxExceeded = currentMode === 'CC' && setpoints.imax > imax;
   const isRsetExceeded = setpoints.rset > rmax;
   const isPsetExceeded = setpoints.pset > pmax;
   const isIlimitExceeded = setpoints.iset > imax;
@@ -87,11 +80,11 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
         </div>
       </div>
 
-      {/* Retro LED Displays for Vmon and Imon */}
+      {/* Retro LED Displays for Vmon (4X 1) and Imon (4X 3) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
         <div className="led-card">
           <div className="led-label">
-            <span>VOLTAGE (VMON)</span>
+            <span>VOLTAGE (VMON - 4X 1)</span>
             <Gauge size={14} style={{ color: 'var(--accent-cyan)' }} />
           </div>
           <div className="led-value voltage">
@@ -102,7 +95,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
 
         <div className="led-card">
           <div className="led-label">
-            <span>CURRENT (IMON)</span>
+            <span>CURRENT (IMON - 4X 3)</span>
             <Gauge size={14} style={{ color: 'var(--accent-green)' }} />
           </div>
           <div className="led-value current">
@@ -137,6 +130,9 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
           <span>{currentMode === 'BAT TEST' ? `BAT TEST (${setpoints.batTestSubMode} MODE)` : `${currentMode} MODE`} SETPOINTS & LIMITS</span>
         </div>
 
+        {/* ========================================================================= */}
+        {/* CV MODE: CV SET (CV_VOLT, 4X 5) & I LIMIT (I_SET_ROW_CC, 4X 15 Monitored) */}
+        {/* ========================================================================= */}
         {currentMode === 'CV' && (
           <>
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
@@ -145,25 +141,32 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={3}
-                  className="setpoint-input"
-                  style={{ border: isCvExceeded ? '2px solid #ef4444' : undefined, background: isCvExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.cv}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{
+                    flex: 1,
+                    border: isCvExceeded ? '2px solid #ef4444' : undefined,
+                    background: isCvExceeded ? '#fef2f2' : undefined
+                  }}
+                  value={setpoints.cv}
                   onChange={(val) => onUpdateSetpoint('cv', val)}
+                  onCommit={(val) => onUpdateSetpoint('cv', val)}
                 />
                 <span className="setpoint-unit">V</span>
               </div>
               {isCvExceeded && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
                   <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS VMAX LIMIT ({vmax} V)!</span>
+                  <span>⚠️ EXCEEDS VMAX LIMIT ({vmax.toFixed(2)} V)!</span>
                 </div>
               )}
             </div>
+
             <div className="setpoint-input-wrapper">
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
-                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored (4X 15)</span>
               </div>
               <div
                 className="setpoint-input"
@@ -178,7 +181,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                   fontWeight: 800,
                   fontSize: '0.95rem'
                 }}
-                title="I Limit in CV mode is monitored from the physical HMI panel"
+                title="I Limit in CV mode is monitored from physical register I_SET_ROW_CC (4X 15)"
               >
                 {(telemetry.hardwareIlimit !== undefined ? telemetry.hardwareIlimit : setpoints.iset).toFixed(3)}
               </div>
@@ -187,6 +190,9 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
           </>
         )}
 
+        {/* ========================================================================= */}
+        {/* CC MODE: I TARGET (I_SET_ROW_CC, 4X 15) & I MAX (I_SET_RANGE_CC, 4X 13)  */}
+        {/* ========================================================================= */}
         {currentMode === 'CC' && (
           <>
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
@@ -195,18 +201,24 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={3}
-                  className="setpoint-input"
-                  style={{ border: isCcTargetExceeded ? '2px solid #ef4444' : undefined, background: isCcTargetExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.iset}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{
+                    flex: 1,
+                    border: isCcTargetExceeded ? '2px solid #ef4444' : undefined,
+                    background: isCcTargetExceeded ? '#fef2f2' : undefined
+                  }}
+                  value={setpoints.iset}
                   onChange={(val) => onUpdateSetpoint('iset', val)}
+                  onCommit={(val) => onUpdateSetpoint('iset', val)}
                 />
                 <span className="setpoint-unit">A</span>
               </div>
               {isCcTargetExceeded && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
                   <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS {setpoints.iset > setpoints.imax ? `IMAX LIMIT (${setpoints.imax} A)` : `SAFETY IMAX LIMIT (${imax} A)`}!</span>
+                  <span>⚠️ EXCEEDS {setpoints.iset > setpoints.imax ? `IMAX LIMIT (${setpoints.imax.toFixed(3)} A)` : `SAFETY IMAX LIMIT (${imax.toFixed(2)} A)`}!</span>
                 </div>
               )}
             </div>
@@ -214,7 +226,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
             <div className="setpoint-input-wrapper">
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I MAX (A):</span>
-                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored (4X 13)</span>
               </div>
               <div
                 className="setpoint-input"
@@ -229,7 +241,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                   fontWeight: 800,
                   fontSize: '0.95rem'
                 }}
-                title="I MAX (I_SET_RANGE_CC) is monitored from the physical HMI panel and cannot be changed from the app"
+                title="I MAX (I_SET_RANGE_CC, 4X 13) is monitored from the physical HMI panel"
               >
                 {setpoints.imax.toFixed(3)}
               </div>
@@ -238,6 +250,9 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
           </>
         )}
 
+        {/* ========================================================================= */}
+        {/* CR MODE: R (RESISTOR_CR_MODE, 4X 17) & I LIMIT (I_SET_ROW_CC, 4X 15)     */}
+        {/* ========================================================================= */}
         {currentMode === 'CR' && (
           <>
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
@@ -246,25 +261,31 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.5}
                   precision={2}
-                  className="setpoint-input"
-                  style={{ border: isRsetExceeded ? '2px solid #ef4444' : undefined, background: isRsetExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.rset}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{
+                    flex: 1,
+                    border: isRsetExceeded ? '2px solid #ef4444' : undefined,
+                    background: isRsetExceeded ? '#fef2f2' : undefined
+                  }}
+                  value={setpoints.rset}
                   onChange={(val) => onUpdateSetpoint('rset', val)}
+                  onCommit={(val) => onUpdateSetpoint('rset', val)}
                 />
                 <span className="setpoint-unit">Ω</span>
               </div>
               {isRsetExceeded && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
                   <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS RMAX LIMIT ({rmax} Ω)!</span>
+                  <span>⚠️ EXCEEDS RMAX LIMIT ({rmax.toFixed(2)} Ω)!</span>
                 </div>
               )}
             </div>
             <div className="setpoint-input-wrapper">
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span className="setpoint-label" style={{ width: '90px' }}>I LIMIT (A):</span>
-                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored</span>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 600 }}>HMI Monitored (4X 15)</span>
               </div>
               <div
                 className="setpoint-input"
@@ -279,7 +300,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                   fontWeight: 800,
                   fontSize: '0.95rem'
                 }}
-                title="I Limit in CR mode is monitored from the physical HMI panel"
+                title="I Limit in CR mode is monitored from physical register I_SET_ROW_CC (4X 15)"
               >
                 {(telemetry.hardwareIlimit !== undefined ? telemetry.hardwareIlimit : setpoints.iset).toFixed(3)}
               </div>
@@ -288,6 +309,9 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
           </>
         )}
 
+        {/* ========================================================================= */}
+        {/* CP MODE: POWER (POWER_CP_MODE, 4X 19) & I LIMIT (I_SET_ROW_CC, 4X 15)    */}
+        {/* ========================================================================= */}
         {currentMode === 'CP' && (
           <>
             <div className="setpoint-input-wrapper" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}>
@@ -296,18 +320,24 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={5}
                   precision={1}
-                  className="setpoint-input"
-                  style={{ border: isPsetExceeded ? '2px solid #ef4444' : undefined, background: isPsetExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.pset}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{
+                    flex: 1,
+                    border: isPsetExceeded ? '2px solid #ef4444' : undefined,
+                    background: isPsetExceeded ? '#fef2f2' : undefined
+                  }}
+                  value={setpoints.pset}
                   onChange={(val) => onUpdateSetpoint('pset', val)}
+                  onCommit={(val) => onUpdateSetpoint('pset', val)}
                 />
                 <span className="setpoint-unit">W</span>
               </div>
               {isPsetExceeded && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
                   <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS PMAX LIMIT ({pmax} W)!</span>
+                  <span>⚠️ EXCEEDS PMAX LIMIT ({pmax.toFixed(1)} W)!</span>
                 </div>
               )}
             </div>
@@ -318,27 +348,35 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={3}
-                  className="setpoint-input"
-                  style={{ border: isIlimitExceeded ? '2px solid #ef4444' : undefined, background: isIlimitExceeded ? '#fef2f2' : undefined }}
-                  value={setpoints.iset}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{
+                    flex: 1,
+                    border: isIlimitExceeded ? '2px solid #ef4444' : undefined,
+                    background: isIlimitExceeded ? '#fef2f2' : undefined
+                  }}
+                  value={setpoints.iset}
                   onChange={(val) => onUpdateSetpoint('iset', val)}
+                  onCommit={(val) => onUpdateSetpoint('iset', val)}
                 />
                 <span className="setpoint-unit">A</span>
               </div>
               {isIlimitExceeded && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#dc2626', fontSize: '0.75rem', fontWeight: 800, paddingLeft: '98px' }}>
                   <AlertCircle size={14} />
-                  <span>⚠️ EXCEEDS IMAX LIMIT ({imax} A)!</span>
+                  <span>⚠️ EXCEEDS IMAX LIMIT ({imax.toFixed(2)} A)!</span>
                 </div>
               )}
             </div>
           </>
         )}
 
+        {/* ========================================================================= */}
+        {/* BAT TEST MODE: VCUTOFF, ISET/RSET, AH, HRS:MIN                            */}
+        {/* ========================================================================= */}
         {currentMode === 'BAT TEST' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
-            {/* Readout Grid matching Emulator Screenshot: Vcutoff, Iset/Rset, AH, HRS:MIN */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               {/* Vcutoff Input Card */}
               <div style={{ background: '#e0f2fe', border: '1.5px solid #38bdf8', borderRadius: '6px', padding: '8px 10px' }}>
@@ -346,10 +384,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={3}
-                  style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
-                  value={setpoints.cutoffV}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{ width: '100%', background: '#ffffff', fontSize: '1.05rem', fontWeight: 800, color: '#0284c7', textAlign: 'center' }}
+                  value={setpoints.cutoffV}
                   onChange={(val) => onUpdateSetpoint('cutoffV', val)}
+                  onCommit={(val) => onUpdateSetpoint('cutoffV', val)}
                 />
               </div>
 
@@ -361,10 +402,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={setpoints.batTestSubMode === 'CC' ? 3 : 2}
-                  style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
-                  value={setpoints.batTestSubMode === 'CC' ? setpoints.iset : setpoints.rset}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{ width: '100%', background: '#ffffff', fontSize: '1.05rem', fontWeight: 800, color: '#0284c7', textAlign: 'center' }}
+                  value={setpoints.batTestSubMode === 'CC' ? setpoints.iset : setpoints.rset}
                   onChange={(val) => onUpdateSetpoint(setpoints.batTestSubMode === 'CC' ? 'iset' : 'rset', val)}
+                  onCommit={(val) => onUpdateSetpoint(setpoints.batTestSubMode === 'CC' ? 'iset' : 'rset', val)}
                 />
               </div>
 
@@ -374,10 +418,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <KeyboardNumericInput
                   step={0.1}
                   precision={1}
-                  style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '1.25rem', fontWeight: 800, color: '#0284c7', textAlign: 'center', outline: 'none' }}
-                  value={setpoints.ah ?? 0}
                   disabled={isFreezed}
+                  commitOnEnterOnly={true}
+                  showEnterButton={true}
+                  style={{ width: '100%', background: '#ffffff', fontSize: '1.05rem', fontWeight: 800, color: '#0284c7', textAlign: 'center' }}
+                  value={setpoints.ah ?? 0}
                   onChange={(val) => onUpdateSetpoint('ah', val)}
+                  onCommit={(val) => onUpdateSetpoint('ah', val)}
                 />
               </div>
 
@@ -389,10 +436,13 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                     step={1}
                     min={0}
                     precision={0}
-                    style={{ width: '45%', background: 'transparent', border: 'none', fontSize: '1.15rem', fontWeight: 800, color: '#0284c7', textAlign: 'right', outline: 'none' }}
-                    value={setpoints.hrs ?? 0}
                     disabled={isFreezed}
+                    commitOnEnterOnly={true}
+                    showEnterButton={true}
+                    style={{ width: '45%', background: '#ffffff', fontSize: '0.95rem', fontWeight: 800, color: '#0284c7', textAlign: 'right' }}
+                    value={setpoints.hrs ?? 0}
                     onChange={(val) => onUpdateSetpoint('hrs', val)}
+                    onCommit={(val) => onUpdateSetpoint('hrs', val)}
                   />
                   <span style={{ fontWeight: 800, color: '#0284c7', fontSize: '1.15rem' }}>:</span>
                   <KeyboardNumericInput
@@ -400,59 +450,85 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                     min={0}
                     max={59}
                     precision={0}
-                    style={{ width: '45%', background: 'transparent', border: 'none', fontSize: '1.15rem', fontWeight: 800, color: '#0284c7', textAlign: 'left', outline: 'none' }}
-                    value={setpoints.min ?? 0}
                     disabled={isFreezed}
+                    commitOnEnterOnly={true}
+                    showEnterButton={true}
+                    style={{ width: '45%', background: '#ffffff', fontSize: '0.95rem', fontWeight: 800, color: '#0284c7', textAlign: 'left' }}
+                    value={setpoints.min ?? 0}
                     onChange={(val) => onUpdateSetpoint('min', val)}
+                    onCommit={(val) => onUpdateSetpoint('min', val)}
                   />
                 </div>
               </div>
             </div>
 
-            {/* Sub-Mode Selector Buttons */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
-              <button
-                disabled={outputState && setpoints.batTestSubMode !== 'CC'}
-                style={{
-                  padding: '10px 4px',
-                  borderRadius: '4px',
-                  fontSize: '0.85rem',
-                  fontWeight: 800,
-                  cursor: outputState && setpoints.batTestSubMode !== 'CC' ? 'not-allowed' : 'pointer',
-                  border: '1.5px solid #16a34a',
-                  background: setpoints.batTestSubMode === 'CC' ? '#22c55e' : '#ffffff',
-                  color: setpoints.batTestSubMode === 'CC' ? '#ffffff' : '#15803d'
-                }}
-                onClick={() => {
-                  if (outputState) return;
-                  onUpdateSetpoint('batTestSubMode', 'CC' as any);
-                }}
-              >
-                CC MODE
-              </button>
+            {/* Sub-mode Toggle (CC / CR) & Reset Battery Test */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className={setpoints.batTestSubMode === 'CC' ? 'btn-primary' : 'btn-chart-action'}
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800 }}
+                  onClick={() => onUpdateSetpoint('batTestSubMode' as any, 'CC' as any)}
+                >
+                  CC SUBMODE
+                </button>
+                <button
+                  type="button"
+                  className={setpoints.batTestSubMode === 'CR' ? 'btn-primary' : 'btn-chart-action'}
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800 }}
+                  onClick={() => onUpdateSetpoint('batTestSubMode' as any, 'CR' as any)}
+                >
+                  CR SUBMODE
+                </button>
+              </div>
 
-              <button
-                disabled={outputState && setpoints.batTestSubMode !== 'CR'}
-                style={{
-                  padding: '10px 4px',
-                  borderRadius: '4px',
-                  fontSize: '0.85rem',
-                  fontWeight: 800,
-                  cursor: outputState && setpoints.batTestSubMode !== 'CR' ? 'not-allowed' : 'pointer',
-                  border: '1.5px solid #2563eb',
-                  background: setpoints.batTestSubMode === 'CR' ? '#3b82f6' : '#ffffff',
-                  color: setpoints.batTestSubMode === 'CR' ? '#ffffff' : '#1d4ed8'
-                }}
-                onClick={() => {
-                  if (outputState) return;
-                  onUpdateSetpoint('batTestSubMode', 'CR' as any);
-                }}
-              >
-                CR MODE
-              </button>
+              {onResetBatTest && (
+                <button
+                  type="button"
+                  className="btn-chart-action"
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', fontWeight: 800, color: '#dc2626', borderColor: '#fca5a5' }}
+                  onClick={onResetBatTest}
+                >
+                  RESET TEST
+                </button>
+              )}
             </div>
           </div>
         )}
+      </div>
+
+      {/* Safety & Real-Time Status Card */}
+      <div className="status-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '0.85rem' }}>
+            <Shield size={16} style={{ color: 'var(--accent-blue)' }} />
+            <span>HARDWARE SAFETY STATUS</span>
+          </div>
+
+          <div style={{
+            fontSize: '0.75rem',
+            fontWeight: 800,
+            padding: '2px 8px',
+            borderRadius: '12px',
+            background: outputState ? '#dcfce7' : '#f1f5f9',
+            color: outputState ? '#15803d' : '#64748b',
+            border: outputState ? '1px solid #86efac' : '1px solid #cbd5e1'
+          }}>
+            {outputState ? 'OUTPUT ACTIVE (ON)' : 'OUTPUT IDLE (OFF)'}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.75rem', fontWeight: 700 }}>
+          <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+            <span style={{ color: '#64748b' }}>V_MAX LIMIT: </span>
+            <span style={{ color: '#0f172a', fontWeight: 800 }}>{vmax.toFixed(2)} V</span>
+          </div>
+          <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+            <span style={{ color: '#64748b' }}>I_MAX LIMIT: </span>
+            <span style={{ color: '#0f172a', fontWeight: 800 }}>{imax.toFixed(2)} A</span>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -166,6 +166,15 @@ export const App: React.FC = () => {
             return prev;
           });
         }
+        if (point.hardwareCvSet !== undefined && point.hardwareCvSet >= 0) {
+          setSetpoints((prev) => (prev.cv !== point.hardwareCvSet ? { ...prev, cv: point.hardwareCvSet! } : prev));
+        }
+        if (point.hardwareRset !== undefined && point.hardwareRset >= 0) {
+          setSetpoints((prev) => (prev.rset !== point.hardwareRset ? { ...prev, rset: point.hardwareRset! } : prev));
+        }
+        if (point.hardwarePset !== undefined && point.hardwarePset >= 0) {
+          setSetpoints((prev) => (prev.pset !== point.hardwarePset ? { ...prev, pset: point.hardwarePset! } : prev));
+        }
 
         // 2-way HMI synchronization: If Output ON/OFF changed on physical hardware panel, reflect in app!
         if (point.isOutputOn !== undefined) {
