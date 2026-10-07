@@ -122,6 +122,16 @@ export const App: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const currentSessionLogsRef = useRef<TelemetryPoint[]>([]);
+  const outputStateRef = useRef<boolean>(outputState);
+  useEffect(() => {
+    outputStateRef.current = outputState;
+  }, [outputState]);
+
+  const engSettingsRef = useRef<EngineeringSettings>(engSettings);
+  useEffect(() => {
+    engSettingsRef.current = engSettings;
+  }, [engSettings]);
+
   const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load Sessions from Database on Mount
@@ -309,10 +319,10 @@ export const App: React.FC = () => {
         // Stream telemetry points into live graph whenever connected
         setTelemetryHistory((prev) => [...prev.slice(-80), point]);
 
-        if (outputState || point.isOutputOn) {
+        if (outputStateRef.current || point.isOutputOn) {
           const logs = currentSessionLogsRef.current;
           const lastTime = logs.length > 0 ? logs[logs.length - 1].timeSeconds : 0;
-          const targetInterval = Math.max(1, engSettings.logIntervalSeconds || 1);
+          const targetInterval = Math.max(1, engSettingsRef.current.logIntervalSeconds || 1);
           if (logs.length === 0 || Math.abs(point.timeSeconds - lastTime) >= targetInterval) {
             currentSessionLogsRef.current.push(point);
           }
@@ -320,8 +330,9 @@ export const App: React.FC = () => {
       });
 
       const unsubStatus = window.electronAPI.modbus.onStatusChange((status: any) => {
-        setConnectionStatus(status);
-        if (status && status.connected) {
+        const isConnected = status === 'CONNECTED' || (typeof status === 'object' && status?.connected);
+        setConnectionStatus(isConnected ? 'CONNECTED' : 'DISCONNECTED');
+        if (isConnected) {
           window.electronAPI?.modbus.diagReadAllRegisters().then((res) => {
             if (res && res.success && res.registers) {
               syncRegistersToState(res.registers);

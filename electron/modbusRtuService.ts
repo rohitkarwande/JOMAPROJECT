@@ -22,16 +22,23 @@ class SerialBusLock {
     this.queue = Promise.resolve();
   }
 
-  public async runExclusive<T>(fn: () => Promise<T>, interDelayMs: number = 10): Promise<T> {
-    const execute = async () => {
+  public async runExclusive<T>(
+    fn: () => Promise<T>,
+    interDelayMs: number = 10,
+    shouldCancel?: () => boolean
+  ): Promise<T> {
+    const execute = async (): Promise<T> => {
+      if (shouldCancel && shouldCancel()) {
+        throw new Error('OPERATION_CANCELLED_CONNECTION_CHANGED');
+      }
       try {
         const result = await fn();
-        if (interDelayMs > 0) {
+        if (interDelayMs > 0 && !(shouldCancel && shouldCancel())) {
           await new Promise((resolve) => setTimeout(resolve, interDelayMs));
         }
         return result;
       } catch (err) {
-        if (interDelayMs > 0) {
+        if (interDelayMs > 0 && !(shouldCancel && shouldCancel())) {
           await new Promise((resolve) => setTimeout(resolve, interDelayMs));
         }
         throw err;
@@ -114,6 +121,7 @@ export class ModbusRtuService {
   private currentOpenBaud: number | null = null;
   private connectLock: Promise<boolean> | null = null;
   private lastTelemetryWarnTime: number = 0;
+  private connectionSessionId: number = 0;
 
   private pollingTimer: NodeJS.Timeout | null = null;
   private telemetryCallback: ((point: TelemetryPoint) => void) | null = null;
@@ -218,14 +226,20 @@ export class ModbusRtuService {
   }
 
   public async closeClient(): Promise<void> {
+    this.connectionSessionId++; // Invalidate all pending or queued operations from closed connection
     if (this.modbusClient) {
       try {
-        if (typeof (this.modbusClient as any)._cancelPendingTransactions === 'function') {
-          (this.modbusClient as any)._cancelPendingTransactions();
-        }
-
         const underlyingPort = (this.modbusClient as any)._port;
         const underlyingClient = underlyingPort?._client;
+
+        // Flush leftover serial bytes before closing port
+        try {
+          if (underlyingClient && typeof underlyingClient.flush === 'function') {
+            underlyingClient.flush(() => {});
+          } else if (underlyingPort && typeof underlyingPort.flush === 'function') {
+            underlyingPort.flush(() => {});
+          }
+        } catch (e) {}
 
         if (this.modbusClient.isOpen || (underlyingClient && underlyingClient.isOpen)) {
           await new Promise<void>((resolve) => {
@@ -304,7 +318,7 @@ export class ModbusRtuService {
         this.currentOpenBaud === targetBaud
       ) {
         this.modbusClient.setID(targetSlaveId);
-        this.modbusClient.setTimeout(1000);
+        this.modbusClient.setTimeout(800);
         this.isHardwareConnected = true;
         this.isCommFault = false;
         this.consecutiveErrors = 0;
@@ -334,7 +348,17 @@ export class ModbusRtuService {
       }
 
       this.modbusClient.setID(targetSlaveId);
-      this.modbusClient.setTimeout(1000);
+      this.modbusClient.setTimeout(800);
+
+      // Flush any leftover hardware serial buffer bytes from prior sessions
+      try {
+        const underlyingPort = (this.modbusClient as any)?._port?._client || (this.modbusClient as any)?._port;
+        if (underlyingPort && typeof underlyingPort.flush === 'function') {
+          await new Promise<void>((resolve) => {
+            underlyingPort.flush((err: any) => resolve());
+          });
+        }
+      } catch (e) {}
 
       this.currentOpenPort = targetPort;
       this.currentOpenBaud = targetBaud;
@@ -553,18 +577,24 @@ export class ModbusRtuService {
     this.batTestAccumulatedAh = 0;
     this.simBatteryVoltage = 12.80;
 
+    const currentSession = this.connectionSessionId;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
-      await this.serialLock.runExclusive(async () => {
-        try {
-          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-          const regs = this.settings.registers;
-          if (regs.hrs !== undefined) await this.writeFloatRegisters(regs.hrs, 0);
-          if (regs.min !== undefined) await this.writeFloatRegisters(regs.min, 0);
-          if (regs.ah !== undefined) await this.writeFloatRegisters(regs.ah, 0);
-        } catch (err) {
-          console.warn('RS485 Reset Bat Test Error:', err);
-        }
-      });
+      await this.serialLock.runExclusive(
+        async () => {
+          if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) return;
+          try {
+            this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+            const regs = this.settings.registers;
+            if (regs.hrs !== undefined) await this.writeFloatRegisters(regs.hrs, 0);
+            if (regs.min !== undefined) await this.writeFloatRegisters(regs.min, 0);
+            if (regs.ah !== undefined) await this.writeFloatRegisters(regs.ah, 0);
+          } catch (err) {
+            console.warn('RS485 Reset Bat Test Error:', err);
+          }
+        },
+        5,
+        () => this.connectionSessionId !== currentSession
+      );
       this.scheduleNextPoll(10);
     }
     return { success: true };
@@ -578,41 +608,47 @@ export class ModbusRtuService {
       this.simBatteryVoltage = 12.80;
     }
 
-    // Write Mode Register to Physical Hardware if applicable (6=CV, 7=CC, 8=CR, 9=CP, 14=BAT TEST)
-    // Behavior matches Diagnostic Panel: direct real-time write with instant hardware readback verification
+    const currentSession = this.connectionSessionId;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
-      const res = await this.serialLock.runExclusive(async () => {
-        try {
-          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-          const modeMap: Record<OperationMode, number> = { CV: 6, CC: 7, CR: 8, CP: 9, 'BAT TEST': 14 };
-          const modeVal = modeMap[mode] ?? 6;
-          const modeAddr = this.settings.registers.mode ?? 28;
-          console.log(`[RS485] Setting Mode ${mode} (Writing INT ${modeVal} to register ${modeAddr})...`);
-          await this.modbusClient!.writeRegister(modeAddr, modeVal);
-
-          // Immediate read-back to verify physical reflection on hardware (matching diagnostic panel convention)
-          await new Promise((r) => setTimeout(r, 60));
-          try {
-            const modeReadRes = await this.modbusClient!.readHoldingRegisters(modeAddr, 1);
-            if (modeReadRes && modeReadRes.data && modeReadRes.data.length >= 1) {
-              const readModeVal = modeReadRes.data[0];
-              console.log(`[RS485] Confirmed physical Mode readback from register ${modeAddr}: ${readModeVal}`);
-              if (readModeVal === 6) this.currentMode = 'CV';
-              else if (readModeVal === 7) this.currentMode = 'CC';
-              else if (readModeVal === 8) this.currentMode = 'CR';
-              else if (readModeVal === 9) this.currentMode = 'CP';
-              else if (readModeVal === 14) this.currentMode = 'BAT TEST';
-            }
-          } catch (readErr) {
-            console.warn('[RS485] Mode readback warning:', readErr);
+      const res = await this.serialLock.runExclusive(
+        async () => {
+          if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+            return { success: false, error: 'Connection closed' };
           }
+          try {
+            this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+            const modeMap: Record<OperationMode, number> = { CV: 6, CC: 7, CR: 8, CP: 9, 'BAT TEST': 14 };
+            const modeVal = modeMap[mode] ?? 6;
+            const modeAddr = this.settings.registers.mode ?? 28;
+            console.log(`[RS485] Setting Mode ${mode} (Writing INT ${modeVal} to register ${modeAddr})...`);
+            await this.modbusClient!.writeRegister(modeAddr, modeVal);
 
-          return { success: true };
-        } catch (err: any) {
-          console.error('Error writing Mode over RS485:', err);
-          return { success: false, error: this.formatModbusError('Mode Selection', err) };
-        }
-      });
+            // Immediate read-back to verify physical reflection on hardware (matching diagnostic panel convention)
+            await new Promise((r) => setTimeout(r, 60));
+            try {
+              const modeReadRes = await this.modbusClient!.readHoldingRegisters(modeAddr, 1);
+              if (modeReadRes && modeReadRes.data && modeReadRes.data.length >= 1) {
+                const readModeVal = modeReadRes.data[0];
+                console.log(`[RS485] Confirmed physical Mode readback from register ${modeAddr}: ${readModeVal}`);
+                if (readModeVal === 6) this.currentMode = 'CV';
+                else if (readModeVal === 7) this.currentMode = 'CC';
+                else if (readModeVal === 8) this.currentMode = 'CR';
+                else if (readModeVal === 9) this.currentMode = 'CP';
+                else if (readModeVal === 14) this.currentMode = 'BAT TEST';
+              }
+            } catch (readErr) {
+              console.warn('[RS485] Mode readback warning:', readErr);
+            }
+
+            return { success: true };
+          } catch (err: any) {
+            console.error('Error writing Mode over RS485:', err);
+            return { success: false, error: this.formatModbusError('Mode Selection', err) };
+          }
+        },
+        5,
+        () => this.connectionSessionId !== currentSession
+      );
 
       if (res.success) {
         this.scheduleNextPoll(10);
@@ -646,41 +682,49 @@ export class ModbusRtuService {
       return { success: false, error: err };
     }
 
-    return this.serialLock.runExclusive(async () => {
-      try {
-        this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-        if (params.type === 'FLOAT') {
-          const res = await this.modbusClient!.readHoldingRegisters(params.address, 2);
-          if (!res || !res.data || res.data.length < 2) {
-            throw new Error(`Insufficient registers returned from address ${params.address}`);
-          }
-          const val = this.readFloatFromBuffer(res.data, 0);
-          console.log(`[RS485 Diag Read] Address ${params.address} (FLOAT): ${val} [Words: ${res.data[0]}, ${res.data[1]}]`);
-          return { success: true, value: val };
-        } else if (params.type === 'COIL') {
-          const res = await this.modbusClient!.readCoils(params.address, 1);
-          if (!res || !res.data || res.data.length < 1) {
-            throw new Error(`Insufficient coil data returned from address ${params.address}`);
-          }
-          const val = Boolean(res.data[0]);
-          console.log(`[RS485 Diag Read] Coil ${params.address}: ${val ? '1 (ON)' : '0 (OFF)'}`);
-          return { success: true, value: val };
-        } else {
-          // INT (1 Register)
-          const res = await this.modbusClient!.readHoldingRegisters(params.address, 1);
-          if (!res || !res.data || res.data.length < 1) {
-            throw new Error(`Insufficient register data returned from address ${params.address}`);
-          }
-          const val = res.data[0];
-          console.log(`[RS485 Diag Read] Address ${params.address} (INT): ${val}`);
-          return { success: true, value: val };
+    const currentSession = this.connectionSessionId;
+    return this.serialLock.runExclusive(
+      async () => {
+        if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+          return { success: false, error: 'Connection closed' };
         }
-      } catch (err: any) {
-        const errMsg = err?.message || String(err);
-        console.error(`[RS485 Diag Read Error] Failed reading address ${params.address} (${params.type}):`, errMsg);
-        return { success: false, error: errMsg };
-      }
-    });
+        try {
+          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+          if (params.type === 'FLOAT') {
+            const res = await this.modbusClient!.readHoldingRegisters(params.address, 2);
+            if (!res || !res.data || res.data.length < 2) {
+              throw new Error(`Insufficient registers returned from address ${params.address}`);
+            }
+            const val = this.readFloatFromBuffer(res.data, 0);
+            console.log(`[RS485 Diag Read] Address ${params.address} (FLOAT): ${val} [Words: ${res.data[0]}, ${res.data[1]}]`);
+            return { success: true, value: val };
+          } else if (params.type === 'COIL') {
+            const res = await this.modbusClient!.readCoils(params.address, 1);
+            if (!res || !res.data || res.data.length < 1) {
+              throw new Error(`Insufficient coil data returned from address ${params.address}`);
+            }
+            const val = Boolean(res.data[0]);
+            console.log(`[RS485 Diag Read] Coil ${params.address}: ${val ? '1 (ON)' : '0 (OFF)'}`);
+            return { success: true, value: val };
+          } else {
+            // INT (1 Register)
+            const res = await this.modbusClient!.readHoldingRegisters(params.address, 1);
+            if (!res || !res.data || res.data.length < 1) {
+              throw new Error(`Insufficient register data returned from address ${params.address}`);
+            }
+            const val = res.data[0];
+            console.log(`[RS485 Diag Read] Address ${params.address} (INT): ${val}`);
+            return { success: true, value: val };
+          }
+        } catch (err: any) {
+          const errMsg = err?.message || String(err);
+          console.error(`[RS485 Diag Read Error] Failed reading address ${params.address} (${params.type}):`, errMsg);
+          return { success: false, error: errMsg };
+        }
+      },
+      5,
+      () => this.connectionSessionId !== currentSession
+    );
   }
 
   // Diagnostic Register Write for Live Hardware Verification
@@ -691,32 +735,40 @@ export class ModbusRtuService {
       return { success: false, error: err };
     }
 
-    return this.serialLock.runExclusive(async () => {
-      try {
-        this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-        if (params.type === 'FLOAT') {
-          console.log(`[RS485 Diag Write] Writing FLOAT ${params.value} to address ${params.address}...`);
-          await this.writeFloatRegisters(params.address, Number(params.value));
-          console.log(`[RS485 Diag Write Success] Address ${params.address} (FLOAT) = ${params.value}`);
-          return { success: true };
-        } else if (params.type === 'COIL') {
-          console.log(`[RS485 Diag Write] Writing COIL ${params.value ? '1' : '0'} to address ${params.address}...`);
-          await this.modbusClient!.writeCoil(params.address, Boolean(params.value));
-          console.log(`[RS485 Diag Write Success] Address ${params.address} (COIL) = ${params.value ? '1' : '0'}`);
-          return { success: true };
-        } else {
-          // INT (1 Register)
-          console.log(`[RS485 Diag Write] Writing INT ${params.value} to address ${params.address}...`);
-          await this.modbusClient!.writeRegister(params.address, Number(params.value));
-          console.log(`[RS485 Diag Write Success] Address ${params.address} (INT) = ${params.value}`);
-          return { success: true };
+    const currentSession = this.connectionSessionId;
+    return this.serialLock.runExclusive(
+      async () => {
+        if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+          return { success: false, error: 'Connection closed' };
         }
-      } catch (err: any) {
-        const errMsg = err?.message || String(err);
-        console.error(`[RS485 Diag Write Error] Failed writing address ${params.address} (${params.type}) = ${params.value}:`, errMsg);
-        return { success: false, error: errMsg };
-      }
-    });
+        try {
+          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+          if (params.type === 'FLOAT') {
+            console.log(`[RS485 Diag Write] Writing FLOAT ${params.value} to address ${params.address}...`);
+            await this.writeFloatRegisters(params.address, Number(params.value));
+            console.log(`[RS485 Diag Write Success] Address ${params.address} (FLOAT) = ${params.value}`);
+            return { success: true };
+          } else if (params.type === 'COIL') {
+            console.log(`[RS485 Diag Write] Writing COIL ${params.value ? '1' : '0'} to address ${params.address}...`);
+            await this.modbusClient!.writeCoil(params.address, Boolean(params.value));
+            console.log(`[RS485 Diag Write Success] Address ${params.address} (COIL) = ${params.value ? '1' : '0'}`);
+            return { success: true };
+          } else {
+            // INT (1 Register)
+            console.log(`[RS485 Diag Write] Writing INT ${params.value} to address ${params.address}...`);
+            await this.modbusClient!.writeRegister(params.address, Number(params.value));
+            console.log(`[RS485 Diag Write Success] Address ${params.address} (INT) = ${params.value}`);
+            return { success: true };
+          }
+        } catch (err: any) {
+          const errMsg = err?.message || String(err);
+          console.error(`[RS485 Diag Write Error] Failed writing address ${params.address} (${params.type}) = ${params.value}:`, errMsg);
+          return { success: false, error: errMsg };
+        }
+      },
+      5,
+      () => this.connectionSessionId !== currentSession
+    );
   }
 
   // Diagnostic Bulk Read for Instant HMI Reading & Real-Time Sync
@@ -757,7 +809,12 @@ export class ModbusRtuService {
       return { success: false, error: err };
     }
 
-    return this.serialLock.runExclusive(async () => {
+    const currentSession = this.connectionSessionId;
+    return this.serialLock.runExclusive(
+      async () => {
+        if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+          return { success: false, error: 'Connection closed' };
+        }
       try {
         this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
         const isBase1 = this.settings.registers.addressBase === 1 || this.settings.registers.vmon === 1;
@@ -883,7 +940,7 @@ export class ModbusRtuService {
         console.error('[RS485 Diag Read All Error]:', errMsg);
         return { success: false, error: errMsg };
       }
-    });
+    }, 5, () => this.connectionSessionId !== currentSession);
   }
 
   // Backend Limit Enforcement & Setpoint Sanitization
@@ -922,12 +979,17 @@ export class ModbusRtuService {
     this.setpoints = candidate;
 
     // Write Setpoints over Physical RS485 Modbus RTU Serial Port (32-bit IEEE 754 Floats)
+    const currentSession = this.connectionSessionId;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
-      const res = await this.serialLock.runExclusive(async () => {
-        try {
-          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-          const regs = this.settings.registers;
-          const mode = this.currentMode;
+      const res = await this.serialLock.runExclusive(
+        async () => {
+          if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+            return { success: false, error: 'Connection closed' };
+          }
+          try {
+            this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+            const regs = this.settings.registers;
+            const mode = this.currentMode;
 
           // 1. CV Mode: Write CV_VOLT (4X 5 / Wire 4)
           // In CV mode, I_SET_ROW_CC (register 14) is a READ-ONLY HMI monitoring register according to client CSV!
@@ -1101,7 +1163,7 @@ export class ModbusRtuService {
           this.isCommFault = true;
           return { success: false, error: this.formatModbusError('RS485 Setpoint Write', err) };
         }
-      });
+      }, 5, () => this.connectionSessionId !== currentSession);
       if (res.success) {
         this.scheduleNextPoll(10);
       }
@@ -1270,29 +1332,37 @@ export class ModbusRtuService {
     }
 
     // 3. Physical Hardware Serial Command Execution protected by SerialBusLock
+    const currentSession = this.connectionSessionId;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
-      const res = await this.serialLock.runExclusive(async () => {
-        try {
-          this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-          const regs = this.settings.registers;
-          const fc = this.activeProfile.outputControlFc || 5;
+      const res = await this.serialLock.runExclusive(
+        async () => {
+          if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+            return { success: false, error: 'Connection closed' };
+          }
+          try {
+            this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
+            const regs = this.settings.registers;
+            const fc = this.activeProfile.outputControlFc || 5;
 
-          if (fc === 5) {
-            try {
-              await this.modbusClient!.writeCoil(regs.outputCoil ?? 0, state);
-            } catch (coilErr) {
-              // Fallback: If device is holding register only (FC06), write to holding register
+            if (fc === 5) {
+              try {
+                await this.modbusClient!.writeCoil(regs.outputCoil ?? 0, state);
+              } catch (coilErr) {
+                // Fallback: If device is holding register only (FC06), write to holding register
+                await this.modbusClient!.writeRegister(regs.outputCoil ?? 0, state ? 1 : 0);
+              }
+            } else {
               await this.modbusClient!.writeRegister(regs.outputCoil ?? 0, state ? 1 : 0);
             }
-          } else {
-            await this.modbusClient!.writeRegister(regs.outputCoil ?? 0, state ? 1 : 0);
+            return { success: true };
+          } catch (err: any) {
+            console.error('RS485 Output Control Error:', err);
+            return { success: false, error: this.formatModbusError('Hardware Output Command', err) };
           }
-          return { success: true };
-        } catch (err: any) {
-          console.error('RS485 Output Control Error:', err);
-          return { success: false, error: this.formatModbusError('Hardware Output Command', err) };
-        }
-      });
+        },
+        5,
+        () => this.connectionSessionId !== currentSession
+      );
 
       if (!res.success) {
         return res;
@@ -1419,8 +1489,11 @@ export class ModbusRtuService {
       return null;
     }
 
-    return this.serialLock.runExclusive(async () => {
-      if (!this.modbusClient || !this.modbusClient.isOpen) return null;
+    const currentSession = this.connectionSessionId;
+    try {
+      return await this.serialLock.runExclusive(
+        async () => {
+          if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) return null;
 
       try {
         const isBase1 = this.settings.registers.addressBase === 1 || this.settings.registers.vmon === 1;
@@ -1625,7 +1698,11 @@ export class ModbusRtuService {
 
         return null;
       }
-    });
+    }, 5, () => this.connectionSessionId !== currentSession);
+    } catch (err: any) {
+      if (err?.message === 'OPERATION_CANCELLED_CONNECTION_CHANGED') return null;
+      throw err;
+    }
   }
 
   private generateSimulatedPoint(): TelemetryPoint {
