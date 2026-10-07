@@ -9,6 +9,7 @@ interface NavigationTabsProps {
   onSelectMode: (mode: OperationMode) => void;
   activeView: ActiveViewType;
   onSelectView: (view: ActiveViewType) => void;
+  isOutputOn?: boolean;
   isTestRunning?: boolean;
   protocolType?: 'RS485' | 'RS232';
 }
@@ -26,6 +27,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
   onSelectMode,
   activeView,
   onSelectView,
+  isOutputOn = false,
   isTestRunning = false,
   protocolType = 'RS485',
 }) => {
@@ -42,49 +44,76 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
 
       <button
         className={`btn-nav-tab ${activeView === 'engSettings' ? 'active' : ''}`}
-        onClick={() => onSelectView('engSettings')}
+        onClick={() => {
+          if (isOutputOn) return;
+          onSelectView('engSettings');
+        }}
+        disabled={isOutputOn}
+        title={isOutputOn ? 'Output is ON — Engineering Settings locked. Turn Output OFF first.' : ''}
+        style={isOutputOn ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
       >
         <Cpu size={18} />
         <span>ENG SETTING</span>
+        {isOutputOn && <Lock size={12} style={{ color: '#ef4444', marginLeft: '4px' }} />}
       </button>
 
       <button
         className={`btn-nav-tab ${activeView === 'history' ? 'active' : ''}`}
-        onClick={() => onSelectView('history')}
+        onClick={() => {
+          if (isOutputOn) return;
+          onSelectView('history');
+        }}
+        disabled={isOutputOn}
+        title={isOutputOn ? 'Output is ON — Screen navigation locked. Turn Output OFF first.' : ''}
+        style={isOutputOn ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
       >
         <FileText size={18} />
         <span>History & PDF Reports</span>
+        {isOutputOn && <Lock size={12} style={{ color: '#ef4444', marginLeft: '4px' }} />}
       </button>
 
       <button
         className={`btn-nav-tab ${activeView === 'settings' ? 'active' : ''}`}
-        onClick={() => onSelectView('settings')}
+        onClick={() => {
+          if (isOutputOn) return;
+          onSelectView('settings');
+        }}
+        disabled={isOutputOn}
+        title={isOutputOn ? `Output is ON — ${protocolType} Settings locked. Turn Output OFF first.` : ''}
+        style={isOutputOn ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
       >
         <Settings size={18} />
         <span>{protocolType} Settings</span>
+        {isOutputOn && <Lock size={12} style={{ color: '#ef4444', marginLeft: '4px' }} />}
       </button>
 
       <div style={{ width: '1px', background: 'rgba(51, 65, 85, 0.6)', margin: '0 8px' }} />
 
       {/* 5 Hardware Mode Tabs */}
       {MODES.map((m) => {
-        const isDisabled = isTestRunning && currentMode !== m.id;
+        const isCurrent = currentMode === m.id;
+        const isDisabled = (isTestRunning || isOutputOn) && !isCurrent;
+        const tooltip = isOutputOn
+          ? (isCurrent ? 'Current active mode (Output is ON)' : 'Output is ON — Mode locked. Turn Output OFF to switch modes.')
+          : (isTestRunning ? 'Mode switching locked during active test. Turn Output OFF first.' : '');
+
         return (
           <button
             key={m.id}
             disabled={isDisabled}
-            title={isDisabled ? 'Mode switching locked during active test. Turn Output OFF first.' : ''}
-            className={`btn-mode-tab ${currentMode === m.id ? 'active' : ''}`}
+            title={tooltip}
+            className={`btn-mode-tab ${isCurrent ? 'active' : ''}`}
+            style={isDisabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
             onClick={() => {
-              if (isTestRunning) return;
+              if (isTestRunning || isOutputOn) return;
               onSelectMode(m.id);
               if (activeView !== 'dashboard') onSelectView('dashboard');
             }}
           >
             {m.icon}
             <span>{m.label}</span>
-            {isTestRunning && currentMode === m.id && (
-              <Lock size={12} style={{ color: '#ffffff', marginLeft: '2px' }} />
+            {(isTestRunning || isOutputOn) && isCurrent && (
+              <Lock size={12} style={{ color: '#ffffff', marginLeft: '4px' }} />
             )}
           </button>
         );

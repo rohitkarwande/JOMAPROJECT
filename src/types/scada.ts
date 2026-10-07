@@ -72,6 +72,8 @@ export interface TelemetryPoint {
   hardwareMin?: number;         // Active MIN read from HMI (4X 25)
   hardwareBatSubMode?: 'CC' | 'CR'; // Active CC_CR_BAT_MODE read from HMI (0X 2)
   deviceResponding?: boolean; // True if slave device is acknowledging Modbus queries
+  _debugMainTimestamp?: number;
+  _debugIpcSentTimestamp?: number;
 }
 
 export interface EngineeringSettings {

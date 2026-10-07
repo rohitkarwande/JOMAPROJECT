@@ -10,7 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { EngSettings } from './components/EngSettings';
 import { SequenceBuilder } from './components/SequenceBuilder';
 import { SafetyModal } from './components/SafetyModal';
-import { Zap, AlertTriangle } from 'lucide-react';
+import { Zap, AlertTriangle, Lock } from 'lucide-react';
 import './styles/index.css';
 
 export const App: React.FC = () => {
@@ -168,55 +168,108 @@ export const App: React.FC = () => {
   // Converts live register values into UI state for immediate reflection
   const syncRegistersToState = (regs: Record<string, { value: number | boolean; formatted: string }>) => {
     setSetpoints((prev) => {
-      let updated = { ...prev };
-      if (typeof regs['VCUTOFF']?.value === 'number' && regs['VCUTOFF'].value > 0) {
-        updated.cutoffV = regs['VCUTOFF'].value;
+      let changed = false;
+      let newCutoffV = prev.cutoffV;
+      if (typeof regs['VCUTOFF']?.value === 'number' && regs['VCUTOFF'].value > 0 && regs['VCUTOFF'].value !== prev.cutoffV) {
+        newCutoffV = regs['VCUTOFF'].value;
+        changed = true;
       }
-      if (typeof regs['AH']?.value === 'number' && regs['AH'].value >= 0) {
-        updated.ah = regs['AH'].value;
+      let newAh = prev.ah;
+      if (typeof regs['AH']?.value === 'number' && regs['AH'].value >= 0 && regs['AH'].value !== prev.ah) {
+        newAh = regs['AH'].value;
+        changed = true;
       }
-      if (typeof regs['HRS']?.value === 'number' && regs['HRS'].value >= 0) {
-        updated.hrs = regs['HRS'].value;
+      let newHrs = prev.hrs;
+      if (typeof regs['HRS']?.value === 'number' && regs['HRS'].value >= 0 && regs['HRS'].value !== prev.hrs) {
+        newHrs = regs['HRS'].value;
+        changed = true;
       }
-      if (typeof regs['MIN']?.value === 'number' && regs['MIN'].value >= 0) {
-        updated.min = regs['MIN'].value;
+      let newMin = prev.min;
+      if (typeof regs['MIN']?.value === 'number' && regs['MIN'].value >= 0 && regs['MIN'].value !== prev.min) {
+        newMin = regs['MIN'].value;
+        changed = true;
       }
+      let newBatSubMode = prev.batTestSubMode;
       if (regs['CC_CR_BAT_MODE'] !== undefined) {
-        updated.batTestSubMode = regs['CC_CR_BAT_MODE'].value ? 'CR' : 'CC';
+        const sub: 'CR' | 'CC' = regs['CC_CR_BAT_MODE'].value ? 'CR' : 'CC';
+        if (sub !== prev.batTestSubMode) {
+          newBatSubMode = sub;
+          changed = true;
+        }
       }
-      if (typeof regs['CV_VOLT']?.value === 'number' && regs['CV_VOLT'].value >= 0) {
-        updated.cv = regs['CV_VOLT'].value;
+      let newCv = prev.cv;
+      if (typeof regs['CV_VOLT']?.value === 'number' && regs['CV_VOLT'].value >= 0 && regs['CV_VOLT'].value !== prev.cv) {
+        newCv = regs['CV_VOLT'].value;
+        changed = true;
       }
-      if (typeof regs['I_SET_ROW_CC']?.value === 'number' && regs['I_SET_ROW_CC'].value >= 0) {
-        updated.iset = regs['I_SET_ROW_CC'].value;
+      let newIset = prev.iset;
+      if (typeof regs['I_SET_ROW_CC']?.value === 'number' && regs['I_SET_ROW_CC'].value >= 0 && regs['I_SET_ROW_CC'].value !== prev.iset) {
+        newIset = regs['I_SET_ROW_CC'].value;
+        changed = true;
       }
-      if (typeof regs['I_SET_RANGE_CC']?.value === 'number' && regs['I_SET_RANGE_CC'].value > 0) {
-        updated.imax = regs['I_SET_RANGE_CC'].value;
+      let newImax = prev.imax;
+      if (typeof regs['I_SET_RANGE_CC']?.value === 'number' && regs['I_SET_RANGE_CC'].value > 0 && regs['I_SET_RANGE_CC'].value !== prev.imax) {
+        newImax = regs['I_SET_RANGE_CC'].value;
+        changed = true;
       }
-      if (typeof regs['RESISTOR_CR_MODE']?.value === 'number' && regs['RESISTOR_CR_MODE'].value >= 0) {
-        updated.rset = regs['RESISTOR_CR_MODE'].value;
+      let newRset = prev.rset;
+      if (typeof regs['RESISTOR_CR_MODE']?.value === 'number' && regs['RESISTOR_CR_MODE'].value >= 0 && regs['RESISTOR_CR_MODE'].value !== prev.rset) {
+        newRset = regs['RESISTOR_CR_MODE'].value;
+        changed = true;
       }
-      if (typeof regs['POWER_CP_MODE']?.value === 'number' && regs['POWER_CP_MODE'].value >= 0) {
-        updated.pset = regs['POWER_CP_MODE'].value;
+      let newPset = prev.pset;
+      if (typeof regs['POWER_CP_MODE']?.value === 'number' && regs['POWER_CP_MODE'].value >= 0 && regs['POWER_CP_MODE'].value !== prev.pset) {
+        newPset = regs['POWER_CP_MODE'].value;
+        changed = true;
       }
-      return updated;
+
+      if (!changed) return prev;
+      return {
+        ...prev,
+        cutoffV: newCutoffV,
+        ah: newAh,
+        hrs: newHrs,
+        min: newMin,
+        batTestSubMode: newBatSubMode,
+        cv: newCv,
+        iset: newIset,
+        imax: newImax,
+        rset: newRset,
+        pset: newPset
+      };
     });
 
     setEngSettings((prev) => {
-      let updated = { ...prev };
-      if (typeof regs['V_MAX']?.value === 'number' && regs['V_MAX'].value > 0) {
-        updated.vmax = regs['V_MAX'].value;
+      let changed = false;
+      let newVmax = prev.vmax;
+      if (typeof regs['V_MAX']?.value === 'number' && regs['V_MAX'].value > 0 && regs['V_MAX'].value !== prev.vmax) {
+        newVmax = regs['V_MAX'].value;
+        changed = true;
       }
-      if (typeof regs['I_MAX']?.value === 'number' && regs['I_MAX'].value > 0) {
-        updated.imax = regs['I_MAX'].value;
+      let newImax = prev.imax;
+      if (typeof regs['I_MAX']?.value === 'number' && regs['I_MAX'].value > 0 && regs['I_MAX'].value !== prev.imax) {
+        newImax = regs['I_MAX'].value;
+        changed = true;
       }
-      if (typeof regs['P_MAX']?.value === 'number' && regs['P_MAX'].value > 0) {
-        updated.pmax = regs['P_MAX'].value;
+      let newPmax = prev.pmax;
+      if (typeof regs['P_MAX']?.value === 'number' && regs['P_MAX'].value > 0 && regs['P_MAX'].value !== prev.pmax) {
+        newPmax = regs['P_MAX'].value;
+        changed = true;
       }
-      if (typeof regs['R_MAX']?.value === 'number' && regs['R_MAX'].value > 0) {
-        updated.rmax = regs['R_MAX'].value;
+      let newRmax = prev.rmax;
+      if (typeof regs['R_MAX']?.value === 'number' && regs['R_MAX'].value > 0 && regs['R_MAX'].value !== prev.rmax) {
+        newRmax = regs['R_MAX'].value;
+        changed = true;
       }
-      return updated;
+
+      if (!changed) return prev;
+      return {
+        ...prev,
+        vmax: newVmax,
+        imax: newImax,
+        pmax: newPmax,
+        rmax: newRmax
+      };
     });
   };
 
@@ -231,6 +284,14 @@ export const App: React.FC = () => {
       }).catch(() => {});
 
       const unsubTelemetry = window.electronAPI.modbus.onTelemetry((point) => {
+        const receivedAt = Date.now();
+        if (point._debugMainTimestamp) {
+          const totalModbusToRenderer = receivedAt - point._debugMainTimestamp;
+          const ipcTransfer = receivedAt - (point._debugIpcSentTimestamp || point._debugMainTimestamp);
+          if (totalModbusToRenderer > 150) {
+            console.warn(`[IPC PERF DELAY] Modbus->Renderer delivery took ${totalModbusToRenderer}ms (IPC transit: ${ipcTransfer}ms)`);
+          }
+        }
         setTelemetry(point);
 
         // HMI is final call: Automatically sync mode if changed on physical HMI
@@ -293,27 +354,25 @@ export const App: React.FC = () => {
         // 2-way HMI synchronization: If Output ON/OFF changed on physical hardware panel, reflect in app!
         if (point.isOutputOn !== undefined) {
           const hwOn = Boolean(point.isOutputOn);
-          setOutputState((prev) => {
-            if (prev !== hwOn) {
-              setOutputConfirmedState(hwOn ? 'ON' : 'OFF');
-              if (hwOn) {
-                if (!timerRef.current) {
-                  setElapsedTimeSeconds(0);
-                  currentSessionLogsRef.current = [];
-                  timerRef.current = setInterval(() => {
-                    setElapsedTimeSeconds((t) => t + 1);
-                  }, 1000);
-                }
-              } else {
-                if (timerRef.current) {
-                  clearInterval(timerRef.current);
-                  timerRef.current = null;
-                }
+          if (outputStateRef.current !== hwOn) {
+            outputStateRef.current = hwOn;
+            setOutputState(hwOn);
+            setOutputConfirmedState(hwOn ? 'ON' : 'OFF');
+            if (hwOn) {
+              if (!timerRef.current) {
+                setElapsedTimeSeconds(0);
+                currentSessionLogsRef.current = [];
+                timerRef.current = setInterval(() => {
+                  setElapsedTimeSeconds((t) => t + 1);
+                }, 1000);
               }
-              return hwOn;
+            } else {
+              if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+              }
             }
-            return prev;
-          });
+          }
         }
 
         // Stream telemetry points into live graph whenever connected
@@ -338,6 +397,14 @@ export const App: React.FC = () => {
               syncRegistersToState(res.registers);
             }
           }).catch(() => {});
+        } else {
+          // Hardware disconnected: reset output state to false so no stale lock remains
+          setOutputState(false);
+          setOutputConfirmedState('OFF');
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
         }
       });
 
@@ -418,72 +485,76 @@ export const App: React.FC = () => {
         unsubStatus();
         unsubSequence();
       };
-    } else {
-      // Offline browser fallback simulator ticker - ONLY active when output is ON
-      if (!outputState) {
-        setTelemetry({ timestamp: '00:00:00', timeSeconds: 0, vmon: 0.00, imon: 0.00, pmon: 0.00 });
-        return;
+    }
+  }, []);
+
+  // Offline browser fallback simulator ticker - ONLY active when output is ON and running in browser outside Electron
+  useEffect(() => {
+    if (window.electronAPI) return;
+
+    if (!outputState) {
+      setTelemetry({ timestamp: '00:00:00', timeSeconds: 0, vmon: 0.00, imon: 0.00, pmon: 0.00 });
+      return;
+    }
+
+    const timer = setInterval(() => {
+      const timeStr = new Date().toTimeString().split(' ')[0];
+      const timeSec = Math.floor(Date.now() / 1000);
+
+      const timeMs = Date.now();
+      const waveV = Math.sin(timeMs / 400) * 0.35 + Math.cos(timeMs / 850) * 0.20;
+      const waveI = Math.cos(timeMs / 500) * 0.15 + Math.sin(timeMs / 950) * 0.10;
+      const noiseV = (Math.random() - 0.5) * 0.25 + waveV;
+      const noiseI = (Math.random() - 0.5) * 0.12 + waveI;
+
+      const mode = isSequenceRunning ? sequenceProgress.currentMode : currentMode;
+      let v = 0;
+      let i = 0;
+
+      if (mode === 'CC') {
+        const targetI = isSequenceRunning ? (sequenceProgress.currentSetpoints.i ?? setpoints.iset) : setpoints.iset;
+        i = Math.min(engSettings.imax, Math.max(0, targetI + noiseI));
+        const rLoadCC = 2.5 + Math.sin(timeMs / 3000) * 0.5;
+        v = Math.min(engSettings.vmax, Math.max(0.5, (i * rLoadCC) + noiseV));
+      } else if (mode === 'CR') {
+        const targetR = Math.max(0.1, isSequenceRunning ? (sequenceProgress.currentSetpoints.r ?? setpoints.rset) : setpoints.rset);
+        v = Math.min(engSettings.vmax, Math.max(0, 24.0 + noiseV));
+        i = Math.min(setpoints.iset, Math.max(0, (v / targetR) + noiseI));
+      } else if (mode === 'CP') {
+        const targetP = Math.max(0, isSequenceRunning ? (sequenceProgress.currentSetpoints.p ?? setpoints.pset) : setpoints.pset);
+        v = Math.min(engSettings.vmax, Math.max(1.0, 24.0 + noiseV));
+        i = v > 0 ? Math.min(setpoints.iset, Math.max(0, (targetP / v) + noiseI)) : 0;
+      } else {
+        // CV Mode
+        const targetV = isSequenceRunning ? (sequenceProgress.currentSetpoints.v ?? setpoints.cv) : setpoints.cv;
+        v = Math.min(engSettings.vmax, Math.max(0, targetV + noiseV));
+        const rLoadCV = 4.8 + Math.cos(timeMs / 2500) * 0.4;
+        i = Math.min(setpoints.iset, Math.max(0, (v / rLoadCV) + noiseI));
       }
 
-      const timer = setInterval(() => {
-        const timeStr = new Date().toTimeString().split(' ')[0];
-        const timeSec = Math.floor(Date.now() / 1000);
+      let activeSp = `${setpoints.cv.toFixed(3)} V`;
+      if (mode === 'CC') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.i ?? setpoints.iset) : setpoints.iset).toFixed(3)} A`;
+      else if (mode === 'CR') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.r ?? setpoints.rset) : setpoints.rset).toFixed(2)} Ω`;
+      else if (mode === 'CP') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.p ?? setpoints.pset) : setpoints.pset).toFixed(1)} W`;
+      else if (mode === 'CV') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.v ?? setpoints.cv) : setpoints.cv).toFixed(3)} V`;
 
-        const timeMs = Date.now();
-        const waveV = Math.sin(timeMs / 400) * 0.35 + Math.cos(timeMs / 850) * 0.20;
-        const waveI = Math.cos(timeMs / 500) * 0.15 + Math.sin(timeMs / 950) * 0.10;
-        const noiseV = (Math.random() - 0.5) * 0.25 + waveV;
-        const noiseI = (Math.random() - 0.5) * 0.12 + waveI;
+      const p = Math.min(engSettings.pmax, v * i);
+      const pt: TelemetryPoint = {
+        timestamp: timeStr,
+        timeSeconds: timeSec,
+        vmon: parseFloat(v.toFixed(3)),
+        imon: parseFloat(i.toFixed(3)),
+        pmon: parseFloat(p.toFixed(2)),
+        activeSetpoint: activeSp
+      };
 
-        const mode = isSequenceRunning ? sequenceProgress.currentMode : currentMode;
-        let v = 0;
-        let i = 0;
+      currentSessionLogsRef.current.push(pt);
+      setTelemetry(pt);
+      setTelemetryHistory((prev) => [...prev.slice(-80), pt]);
+    }, settings.pollingIntervalMs);
 
-        if (mode === 'CC') {
-          const targetI = isSequenceRunning ? (sequenceProgress.currentSetpoints.i ?? setpoints.iset) : setpoints.iset;
-          i = Math.min(engSettings.imax, Math.max(0, targetI + noiseI));
-          const rLoadCC = 2.5 + Math.sin(timeMs / 3000) * 0.5;
-          v = Math.min(engSettings.vmax, Math.max(0.5, (i * rLoadCC) + noiseV));
-        } else if (mode === 'CR') {
-          const targetR = Math.max(0.1, isSequenceRunning ? (sequenceProgress.currentSetpoints.r ?? setpoints.rset) : setpoints.rset);
-          v = Math.min(engSettings.vmax, Math.max(0, 24.0 + noiseV));
-          i = Math.min(setpoints.iset, Math.max(0, (v / targetR) + noiseI));
-        } else if (mode === 'CP') {
-          const targetP = Math.max(0, isSequenceRunning ? (sequenceProgress.currentSetpoints.p ?? setpoints.pset) : setpoints.pset);
-          v = Math.min(engSettings.vmax, Math.max(1.0, 24.0 + noiseV));
-          i = v > 0 ? Math.min(setpoints.iset, Math.max(0, (targetP / v) + noiseI)) : 0;
-        } else {
-          // CV Mode
-          const targetV = isSequenceRunning ? (sequenceProgress.currentSetpoints.v ?? setpoints.cv) : setpoints.cv;
-          v = Math.min(engSettings.vmax, Math.max(0, targetV + noiseV));
-          const rLoadCV = 4.8 + Math.cos(timeMs / 2500) * 0.4;
-          i = Math.min(setpoints.iset, Math.max(0, (v / rLoadCV) + noiseI));
-        }
-
-        let activeSp = `${setpoints.cv.toFixed(3)} V`;
-        if (mode === 'CC') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.i ?? setpoints.iset) : setpoints.iset).toFixed(3)} A`;
-        else if (mode === 'CR') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.r ?? setpoints.rset) : setpoints.rset).toFixed(2)} Ω`;
-        else if (mode === 'CP') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.p ?? setpoints.pset) : setpoints.pset).toFixed(1)} W`;
-        else if (mode === 'CV') activeSp = `${(isSequenceRunning ? (sequenceProgress.currentSetpoints.v ?? setpoints.cv) : setpoints.cv).toFixed(3)} V`;
-
-        const p = Math.min(engSettings.pmax, v * i);
-        const pt: TelemetryPoint = {
-          timestamp: timeStr,
-          timeSeconds: timeSec,
-          vmon: parseFloat(v.toFixed(3)),
-          imon: parseFloat(i.toFixed(3)),
-          pmon: parseFloat(p.toFixed(2)),
-          activeSetpoint: activeSp
-        };
-
-        currentSessionLogsRef.current.push(pt);
-        setTelemetry(pt);
-        setTelemetryHistory((prev) => [...prev.slice(-80), pt]);
-      }, settings.pollingIntervalMs);
-
-      return () => clearInterval(timer);
-    }
-  }, [outputState, setpoints, engSettings, settings.pollingIntervalMs]);
+    return () => clearInterval(timer);
+  }, [outputState, setpoints, engSettings, settings.pollingIntervalMs, currentMode, isSequenceRunning, sequenceProgress]);
 
   // Prevent accidental tab/window close while test is running and save test as ABORTED
   useEffect(() => {
@@ -539,23 +610,46 @@ export const App: React.FC = () => {
 
   // Mode Selection Handler - Real-time switching matching diagnostic panel
   const handleSelectMode = async (mode: OperationMode) => {
+    // OPERATOR LOCK GUARD: Block mode changes when physical Output is ON!
+    if (outputState) {
+      console.warn(`[OPERATOR LOCK] Mode change to ${mode} blocked because Output is currently ON!`);
+      return;
+    }
+    if (mode === currentMode) return;
+    const clickTime = Date.now();
+    console.log(`[UI EVENT] Mode change initiated: mode=${mode} at ${new Date().toISOString()}`);
     setCurrentMode(mode);
     if (window.electronAPI) {
       try {
         const res = await window.electronAPI.modbus.setMode(mode, true);
+        const modeElapsed = Date.now() - clickTime;
+        console.log(`[UI EVENT] setMode IPC finished in ${modeElapsed}ms (success: ${res?.success})`);
         if (res && res.success === false) {
           console.warn('Set mode error:', res.error);
-        }
-        // Immediate sync matching diagnostic panel to reflect physical hardware setpoints for this mode
-        const diagRes = await window.electronAPI.modbus.diagReadAllRegisters();
-        if (diagRes && diagRes.success && diagRes.registers) {
-          syncRegistersToState(diagRes.registers);
         }
       } catch (err) {
         console.error('Failed to set mode:', err);
       }
     }
   };
+
+  // View Selection Handler - Guard navigation away from dashboard when Output is ON
+  const handleSelectView = (view: ActiveViewType) => {
+    if (outputState && view !== 'dashboard') {
+      console.warn(`[OPERATOR LOCK] Navigation to ${view} blocked because Output is currently ON!`);
+      return;
+    }
+    setActiveView(view);
+  };
+
+  // Edge Case 17: If Output becomes ON (e.g. from physical HMI) while another tab is active,
+  // return immediately to active operating dashboard to enforce Operator Lock.
+  useEffect(() => {
+    if (outputState && activeView !== 'dashboard') {
+      console.log('[OPERATOR LOCK] Hardware Output is ON. Returning active view to Control Dashboard.');
+      setActiveView('dashboard');
+    }
+  }, [outputState, activeView]);
 
   // Setpoint Update Handler - Triggered on ENTER key or SET/ENTER button click
   const handleUpdateSetpoint = async (key: keyof SetpointValues, val: any) => {
@@ -638,9 +732,12 @@ export const App: React.FC = () => {
 
     if (window.electronAPI) {
       try {
-        console.log(`[Setpoint Write] Writing ${key} = ${val} to RS485...`);
+        const clickTime = Date.now();
+        console.log(`[UI EVENT] Setpoint write initiated: ${key} = ${val} at ${new Date().toISOString()}`);
         // Crucial: Only pass the specific changed setpoint so Modbus writes only that register!
         const res = await window.electronAPI.modbus.writeSetpoints({ [key]: val });
+        const roundtrip = Date.now() - clickTime;
+        console.log(`[UI EVENT] Setpoint write roundtrip: ${key} = ${val} finished in ${roundtrip}ms (success: ${res?.success})`);
         if (res && res.success === false) {
           setSafetyModal({
             title: '⚠️ Setpoint Write Failed',
@@ -691,7 +788,11 @@ export const App: React.FC = () => {
 
 
     if (window.electronAPI) {
+      const clickTime = Date.now();
+      console.log(`[UI EVENT] Output toggle initiated: state=${state} at ${new Date().toISOString()}`);
       const res: any = await window.electronAPI.modbus.setOutput(state);
+      const roundtrip = Date.now() - clickTime;
+      console.log(`[UI EVENT] Output toggle roundtrip: state=${state} finished in ${roundtrip}ms (success: ${res?.success})`);
       if (res && res.success === false) {
         setSafetyModal({
           title: '⚠️ Output Command Failed',
@@ -793,6 +894,12 @@ export const App: React.FC = () => {
       await window.electronAPI.modbus.disconnect();
     }
     setConnectionStatus('DISCONNECTED');
+    setOutputState(false);
+    setOutputConfirmedState('OFF');
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
   };
 
   return (
@@ -809,12 +916,13 @@ export const App: React.FC = () => {
         currentMode={isSequenceRunning ? sequenceProgress.currentMode : currentMode}
         onSelectMode={handleSelectMode}
         activeView={activeView}
-        onSelectView={setActiveView}
+        onSelectView={handleSelectView}
+        isOutputOn={outputState}
         isTestRunning={isSequenceRunning}
         protocolType={settings.protocolType || 'RS485'}
       />
 
-      {activeView === 'dashboard' && (
+      {(activeView === 'dashboard' || outputState) && (
         <main className="dashboard-layout">
           <div className="sidebar-controls">
             {isSequenceRunning && (
@@ -836,6 +944,42 @@ export const App: React.FC = () => {
                   <div style={{ fontWeight: 800, color: '#064e3b' }}>AUTOMATED TEST SEQUENCE RUNNING — CONTROLS FREEZED</div>
                   <div style={{ fontSize: '0.75rem', color: '#047857', marginTop: '2px' }}>
                     Test: <strong>{sequenceProgress.testName}</strong> | Step {sequenceProgress.currentStepIndex + 1} of {sequenceProgress.totalSteps || 1} | Cycle {Math.min(sequenceProgress.currentCycle, sequenceProgress.totalCycles || 1)} of {sequenceProgress.totalCycles} ({sequenceProgress.currentMode} Mode)
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {outputState && !isSequenceRunning && (
+              <div style={{
+                background: '#eff6ff',
+                border: '1.5px solid #3b82f6',
+                borderRadius: '6px',
+                padding: '8px 14px',
+                color: '#1e40af',
+                fontSize: '0.80rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                boxShadow: '0 2px 6px rgba(59, 130, 246, 0.15)'
+              }}>
+                <Lock size={18} style={{ color: '#2563eb', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 800, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>OUTPUT ACTIVE — OPERATING SCREEN LOCKED</span>
+                    <span style={{
+                      background: '#dbeafe',
+                      color: '#1d4ed8',
+                      fontSize: '0.72rem',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #bfdbfe'
+                    }}>
+                      {currentMode} MODE
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#2563eb', marginTop: '2px', fontWeight: 500 }}>
+                    Mode switching and Engineering Settings are locked while hardware output is active. Turn Output OFF to change modes.
                   </div>
                 </div>
               </div>
@@ -876,7 +1020,7 @@ export const App: React.FC = () => {
         </main>
       )}
 
-      <div style={{ display: activeView === 'sequence' ? 'block' : 'none' }}>
+      <div style={{ display: (activeView === 'sequence' && !outputState) ? 'block' : 'none' }}>
         <SequenceBuilder
           engSettings={engSettings}
           telemetry={telemetry}
@@ -885,14 +1029,14 @@ export const App: React.FC = () => {
         />
       </div>
 
-      {activeView === 'engSettings' && (
+      {activeView === 'engSettings' && !outputState && (
         <EngSettings
           engSettings={engSettings}
           onSaveEngSettings={handleSaveEngSettings}
         />
       )}
 
-      {activeView === 'history' && (
+      {activeView === 'history' && !outputState && (
         <HistoryAndPdf
           sessions={sessions}
           onDeleteSession={handleDeleteSession}
@@ -900,7 +1044,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {activeView === 'settings' && (
+      {activeView === 'settings' && !outputState && (
         <SettingsModal
           settings={settings}
           onSaveSettings={handleSaveSettings}

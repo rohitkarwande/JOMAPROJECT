@@ -465,21 +465,21 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
                 <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#475569' }}>SUBMODE:</span>
                 <button
                   type="button"
-                  disabled={isFreezed}
+                  disabled={isFreezed || outputState}
                   className={activeBatSubMode === 'CC' ? 'btn-primary' : 'btn-chart-action'}
-                  style={{ padding: '6px 16px', fontSize: '0.82rem', fontWeight: 800, borderRadius: '6px' }}
+                  style={{ padding: '6px 16px', fontSize: '0.82rem', fontWeight: 800, borderRadius: '6px', opacity: (isFreezed || outputState) && activeBatSubMode !== 'CC' ? 0.5 : 1, cursor: (isFreezed || outputState) ? 'not-allowed' : 'pointer' }}
                   onClick={() => onUpdateSetpoint('batTestSubMode' as any, 'CC')}
-                  title="Battery Test CC Submode (CC_CR_BAT_MODE = 0)"
+                  title={outputState ? 'Output is ON — Submode locked. Turn Output OFF to change submode.' : 'Battery Test CC Submode (CC_CR_BAT_MODE = 0)'}
                 >
                   CC SUBMODE
                 </button>
                 <button
                   type="button"
-                  disabled={isFreezed}
+                  disabled={isFreezed || outputState}
                   className={activeBatSubMode === 'CR' ? 'btn-primary' : 'btn-chart-action'}
-                  style={{ padding: '6px 16px', fontSize: '0.82rem', fontWeight: 800, borderRadius: '6px' }}
+                  style={{ padding: '6px 16px', fontSize: '0.82rem', fontWeight: 800, borderRadius: '6px', opacity: (isFreezed || outputState) && activeBatSubMode !== 'CR' ? 0.5 : 1, cursor: (isFreezed || outputState) ? 'not-allowed' : 'pointer' }}
                   onClick={() => onUpdateSetpoint('batTestSubMode' as any, 'CR')}
-                  title="Battery Test CR Submode (CC_CR_BAT_MODE = 1)"
+                  title={outputState ? 'Output is ON — Submode locked. Turn Output OFF to change submode.' : 'Battery Test CR Submode (CC_CR_BAT_MODE = 1)'}
                 >
                   CR SUBMODE
                 </button>

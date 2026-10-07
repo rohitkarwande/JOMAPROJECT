@@ -511,6 +511,14 @@ input, textarea, select {
   border-color: #1e293b;
 }
 
+.btn-nav-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #94a3b8;
+}
+
 /* Main Layout Grid */
 .app-container {
   display: flex;

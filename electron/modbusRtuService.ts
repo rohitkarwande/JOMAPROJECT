@@ -15,33 +15,247 @@ import {
   TelemetryPoint
 } from '../src/types/scada';
 
+function formatTimestamp(d: Date | number): string {
+  const date = typeof d === 'number' ? new Date(d) : d;
+  const pad = (n: number, z = 2) => String(n).padStart(z, '0');
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${ms}`;
+}
+
+export interface ModbusCallMeta {
+  command: string;
+  session?: number;
+  readWrite?: 'READ' | 'WRITE';
+  fc?: string;
+  address?: string | number;
+  retryCount?: number;
+}
+
+export interface ModbusDebugReport {
+  command: string;
+  session: number;
+  created: number;
+  queued: number;
+  queueLength: number;
+  started: number;
+  sent: number;
+  response: number;
+  completed: number;
+  queueWait: number;
+  transactionTime: number;
+  retryCount: number;
+  fc?: string;
+  address?: string | number;
+  readWrite?: 'READ' | 'WRITE';
+  error?: string;
+}
+
+class CommandRateTracker {
+  private diagReadAllTimestamps: number[] = [];
+  private pollTelemetryTimestamps: number[] = [];
+  private writeSetpointTimestamps: number[] = [];
+
+  public record(command?: string): void {
+    if (!command) return;
+    const now = Date.now();
+    if (command === 'DIAG_READ_ALL') {
+      this.diagReadAllTimestamps.push(now);
+    } else if (command === 'POLL_TELEMETRY') {
+      this.pollTelemetryTimestamps.push(now);
+    } else if (command === 'WRITE_SETPOINT' || command === 'WRITE_BAT_SETPOINTS') {
+      this.writeSetpointTimestamps.push(now);
+    }
+  }
+
+  public getRates(): { diagRate: number; pollRate: number; writeRate: number } {
+    const now = Date.now();
+    const windowMs = 5000;
+    const cutoff = now - windowMs;
+
+    this.diagReadAllTimestamps = this.diagReadAllTimestamps.filter((t) => t >= cutoff);
+    this.pollTelemetryTimestamps = this.pollTelemetryTimestamps.filter((t) => t >= cutoff);
+    this.writeSetpointTimestamps = this.writeSetpointTimestamps.filter((t) => t >= cutoff);
+
+    const sec = windowMs / 1000;
+    return {
+      diagRate: parseFloat((this.diagReadAllTimestamps.length / sec).toFixed(2)),
+      pollRate: parseFloat((this.pollTelemetryTimestamps.length / sec).toFixed(2)),
+      writeRate: parseFloat((this.writeSetpointTimestamps.length / sec).toFixed(2))
+    };
+  }
+}
+
+export const commandRateTracker = new CommandRateTracker();
+
+export function printModbusDebug(log: ModbusDebugReport): void {
+  const rates = commandRateTracker.getRates();
+  const lines = [
+    `[MODBUS DEBUG]`,
+    `Command: ${log.command}`,
+    `Session: ${log.session}`,
+    `Created: ${formatTimestamp(log.created)}`,
+    `Queued: ${formatTimestamp(log.queued)}`,
+    `QueueLength: ${log.queueLength}`,
+    `Started: ${formatTimestamp(log.started)}`,
+    `Sent: ${formatTimestamp(log.sent)}`,
+    `Response: ${formatTimestamp(log.response)}`,
+    `Completed: ${formatTimestamp(log.completed)}`,
+    `QueueWait: ${log.queueWait}ms`,
+    `TransactionTime: ${log.transactionTime}ms`,
+    `RetryCount: ${log.retryCount}`,
+    `CommandRates (5s avg): DIAG_READ_ALL=${rates.diagRate}/s, POLL_TELEMETRY=${rates.pollRate}/s, WRITE_SETPOINT=${rates.writeRate}/s`
+  ];
+  if (log.fc || log.address || log.readWrite) {
+    lines.push(`Details: FC=${log.fc ?? 'N/A'}, Addr=${log.address ?? 'N/A'}, R/W=${log.readWrite ?? 'N/A'}`);
+  }
+  if (log.error) {
+    lines.push(`Error: ${log.error}`);
+  }
+  console.log(lines.join('\n'));
+}
+
+export interface TimingContext {
+  recordPhysicalSent: (t?: number) => void;
+  recordPhysicalResponse: (t?: number) => void;
+}
+
 class SerialBusLock {
   private queue: Promise<any> = Promise.resolve();
+  private pendingCount: number = 0;
+
+  public onExecuting?: (ctx: TimingContext | null) => void;
 
   public reset(): void {
     this.queue = Promise.resolve();
+    this.pendingCount = 0;
+  }
+
+  public getQueueLength(): number {
+    return this.pendingCount;
   }
 
   public async runExclusive<T>(
-    fn: () => Promise<T>,
+    fn: (ctx?: TimingContext) => Promise<T>,
     interDelayMs: number = 10,
-    shouldCancel?: () => boolean
+    shouldCancel?: () => boolean,
+    meta?: ModbusCallMeta,
+    session: number = 0
   ): Promise<T> {
+    const created = Date.now();
+    const queued = Date.now();
+    this.pendingCount++;
+    const queueLength = this.pendingCount;
+    if (meta && meta.command) {
+      commandRateTracker.record(meta.command);
+    }
+
+    let started = 0;
+    let sent = 0;
+    let response = 0;
+    let completed = 0;
+
+    const timingContext: TimingContext = {
+      recordPhysicalSent: (t?: number) => {
+        if (!sent) sent = t || Date.now();
+      },
+      recordPhysicalResponse: (t?: number) => {
+        response = t || Date.now();
+      }
+    };
+
     const execute = async (): Promise<T> => {
+      started = Date.now();
       if (shouldCancel && shouldCancel()) {
+        completed = Date.now();
+        this.pendingCount = Math.max(0, this.pendingCount - 1);
+        if (meta) {
+          printModbusDebug({
+            command: meta.command,
+            session: meta.session !== undefined ? meta.session : session,
+            created,
+            queued,
+            queueLength,
+            started,
+            sent: started,
+            response: completed,
+            completed,
+            queueWait: started - queued,
+            transactionTime: 0,
+            retryCount: meta.retryCount || 0,
+            fc: meta.fc,
+            address: meta.address,
+            readWrite: meta.readWrite,
+            error: 'OPERATION_CANCELLED_CONNECTION_CHANGED'
+          });
+        }
         throw new Error('OPERATION_CANCELLED_CONNECTION_CHANGED');
       }
+
+      if (this.onExecuting) this.onExecuting(timingContext);
       try {
-        const result = await fn();
+        const result = await fn(timingContext);
+        if (!sent) sent = started;
+        if (!response) response = Date.now();
+
         if (interDelayMs > 0 && !(shouldCancel && shouldCancel())) {
           await new Promise((resolve) => setTimeout(resolve, interDelayMs));
+        }
+        completed = Date.now();
+        this.pendingCount = Math.max(0, this.pendingCount - 1);
+
+        if (meta) {
+          printModbusDebug({
+            command: meta.command,
+            session: meta.session !== undefined ? meta.session : session,
+            created,
+            queued,
+            queueLength,
+            started,
+            sent,
+            response,
+            completed,
+            queueWait: started - queued,
+            transactionTime: Math.max(0, response - sent),
+            retryCount: meta.retryCount || 0,
+            fc: meta.fc,
+            address: meta.address,
+            readWrite: meta.readWrite
+          });
         }
         return result;
-      } catch (err) {
+      } catch (err: any) {
+        if (!sent) sent = started;
+        if (!response) response = Date.now();
+
         if (interDelayMs > 0 && !(shouldCancel && shouldCancel())) {
           await new Promise((resolve) => setTimeout(resolve, interDelayMs));
         }
+        completed = Date.now();
+        this.pendingCount = Math.max(0, this.pendingCount - 1);
+
+        if (meta) {
+          printModbusDebug({
+            command: meta.command,
+            session: meta.session !== undefined ? meta.session : session,
+            created,
+            queued,
+            queueLength,
+            started,
+            sent,
+            response,
+            completed,
+            queueWait: started - queued,
+            transactionTime: Math.max(0, response - sent),
+            retryCount: meta.retryCount || 0,
+            fc: meta.fc,
+            address: meta.address,
+            readWrite: meta.readWrite,
+            error: err?.message || String(err)
+          });
+        }
         throw err;
+      } finally {
+        if (this.onExecuting) this.onExecuting(null);
       }
     };
 
@@ -103,6 +317,11 @@ export class ModbusRtuService {
 
   private simForcePowerExceed: boolean = false;
   private simForceVoltExceed: boolean = false;
+  private inFlightDiagReadAll: Promise<{
+    success: boolean;
+    registers?: Record<string, { value: number | boolean; formatted: string }>;
+    error?: string;
+  }> | null = null;
 
   public triggerSimAlarm(type: 'power' | 'volt') {
     if (type === 'power') {
@@ -143,7 +362,56 @@ export class ModbusRtuService {
   private isConnecting: boolean = false;
   private isPollingActive: boolean = false;
 
+  private activeTimingContext: TimingContext | null = null;
+
+  private instrumentModbusClient(client: ModbusRTU): void {
+    if (!client || (client as any)._isInstrumented) return;
+    (client as any)._isInstrumented = true;
+
+    const wrap = (
+      methodName: 'readHoldingRegisters' | 'readCoils' | 'writeRegister' | 'writeRegisters' | 'writeCoil',
+      fcName: string
+    ) => {
+      const original = (client as any)[methodName];
+      if (typeof original !== 'function') return;
+
+      (client as any)[methodName] = async (...args: any[]) => {
+        const sentTime = Date.now();
+        if (this.activeTimingContext) {
+          this.activeTimingContext.recordPhysicalSent(sentTime);
+        }
+        try {
+          const res = await original.apply(client, args);
+          const respTime = Date.now();
+          if (this.activeTimingContext) {
+            this.activeTimingContext.recordPhysicalResponse(respTime);
+          }
+          const dur = respTime - sentTime;
+          console.log(`  [PHYSICAL MODBUS] ${fcName} (${methodName} addr=${args[0]} len/val=${JSON.stringify(args[1])}) -> ${dur}ms (OK)`);
+          return res;
+        } catch (err: any) {
+          const respTime = Date.now();
+          if (this.activeTimingContext) {
+            this.activeTimingContext.recordPhysicalResponse(respTime);
+          }
+          const dur = respTime - sentTime;
+          console.warn(`  [PHYSICAL MODBUS ERROR] ${fcName} (${methodName} addr=${args[0]} len/val=${JSON.stringify(args[1])}) -> ${dur}ms (FAIL: ${err?.message || err})`);
+          throw err;
+        }
+      };
+    };
+
+    wrap('readHoldingRegisters', 'FC03');
+    wrap('readCoils', 'FC01');
+    wrap('writeRegister', 'FC06');
+    wrap('writeRegisters', 'FC16');
+    wrap('writeCoil', 'FC05');
+  }
+
   constructor() {
+    this.serialLock.onExecuting = (ctx) => {
+      this.activeTimingContext = ctx;
+    };
     this.updateActiveProfile(this.settings.selectedProfileId);
     this.settings.registers = CLIENT_CSV_REGISTERS_BASE0;
     this.settings.isSimulator = false;
@@ -164,6 +432,10 @@ export class ModbusRtuService {
 
   public getSettings(): ConnectionSettings {
     return { ...this.settings };
+  }
+
+  public getQueueLength(): number {
+    return this.serialLock.getQueueLength();
   }
 
   public updateActiveProfile(profileId: string) {
@@ -227,6 +499,7 @@ export class ModbusRtuService {
 
   public async closeClient(): Promise<void> {
     this.connectionSessionId++; // Invalidate all pending or queued operations from closed connection
+    this.inFlightDiagReadAll = null;
     if (this.modbusClient) {
       try {
         const underlyingPort = (this.modbusClient as any)._port;
@@ -284,6 +557,8 @@ export class ModbusRtuService {
     await this.closeClient();
     this.isHardwareConnected = false;
     this.isCommFault = false;
+    this.outputState = false;
+    this.outputConfirmedState = 'OFF';
     if (this.statusCallback) {
       this.statusCallback('DISCONNECTED');
     }
@@ -319,6 +594,7 @@ export class ModbusRtuService {
       ) {
         this.modbusClient.setID(targetSlaveId);
         this.modbusClient.setTimeout(800);
+        this.instrumentModbusClient(this.modbusClient);
         this.isHardwareConnected = true;
         this.isCommFault = false;
         this.consecutiveErrors = 0;
@@ -333,6 +609,7 @@ export class ModbusRtuService {
       this.serialLock.reset();
 
       this.modbusClient = new ModbusRTU();
+      this.instrumentModbusClient(this.modbusClient);
 
       if (targetPort.startsWith('TCP:') || targetPort.includes('127.0.0.1') || targetPort.toLowerCase().includes('localhost')) {
         const ip = targetPort.replace(/^TCP:/i, '').trim() || '127.0.0.1';
@@ -593,7 +870,9 @@ export class ModbusRtuService {
           }
         },
         5,
-        () => this.connectionSessionId !== currentSession
+        () => this.connectionSessionId !== currentSession,
+        { command: 'RESET_BAT_TEST', readWrite: 'WRITE', fc: 'FC16', address: 'hrs,min,ah' },
+        currentSession
       );
       this.scheduleNextPoll(10);
     }
@@ -601,6 +880,12 @@ export class ModbusRtuService {
   }
 
   public async setMode(mode: OperationMode, force: boolean = false): Promise<{ success: boolean; error?: string }> {
+    // OPERATOR LOCK BACKEND GUARD: Block mode changes when physical Output is ON
+    if (this.outputState && !force && mode !== this.currentMode) {
+      console.warn(`[OPERATOR LOCK] Cannot change mode to ${mode} while physical Output is ON!`);
+      return { success: false, error: 'Cannot change mode while Output is ON' };
+    }
+
     this.currentMode = mode;
     if (mode === 'BAT TEST') {
       this.batTestStartTime = null;
@@ -610,6 +895,9 @@ export class ModbusRtuService {
 
     const currentSession = this.connectionSessionId;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
+      const modeMap: Record<OperationMode, number> = { CV: 6, CC: 7, CR: 8, CP: 9, 'BAT TEST': 14 };
+      const modeVal = modeMap[mode] ?? 6;
+      const modeAddr = this.settings.registers.mode ?? 28;
       const res = await this.serialLock.runExclusive(
         async () => {
           if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
@@ -617,9 +905,6 @@ export class ModbusRtuService {
           }
           try {
             this.modbusClient!.setID(Number(this.settings.slaveId) || 1);
-            const modeMap: Record<OperationMode, number> = { CV: 6, CC: 7, CR: 8, CP: 9, 'BAT TEST': 14 };
-            const modeVal = modeMap[mode] ?? 6;
-            const modeAddr = this.settings.registers.mode ?? 28;
             console.log(`[RS485] Setting Mode ${mode} (Writing INT ${modeVal} to register ${modeAddr})...`);
             await this.modbusClient!.writeRegister(modeAddr, modeVal);
 
@@ -647,7 +932,9 @@ export class ModbusRtuService {
           }
         },
         5,
-        () => this.connectionSessionId !== currentSession
+        () => this.connectionSessionId !== currentSession,
+        { command: `SET_MODE (${mode})`, readWrite: 'WRITE', fc: 'FC06', address: modeAddr },
+        currentSession
       );
 
       if (res.success) {
@@ -663,13 +950,19 @@ export class ModbusRtuService {
     this.simForcePowerExceed = false;
     this.simForceVoltExceed = false;
     if (!this.settings.isSimulator && this.modbusClient && this.modbusClient.isOpen) {
-      await this.serialLock.runExclusive(async () => {
-        try {
-          await this.modbusClient!.writeCoil(coilIndex, false);
-        } catch (err) {
-          console.warn('RS485 Clear Alarm Coil Write Error:', err);
-        }
-      });
+      await this.serialLock.runExclusive(
+        async () => {
+          try {
+            await this.modbusClient!.writeCoil(coilIndex, false);
+          } catch (err) {
+            console.warn('RS485 Clear Alarm Coil Write Error:', err);
+          }
+        },
+        5,
+        undefined,
+        { command: `CLEAR_ALARM_COIL (${coilIndex})`, readWrite: 'WRITE', fc: 'FC05', address: coilIndex },
+        this.connectionSessionId
+      );
     }
     return { success: true };
   }
@@ -723,7 +1016,9 @@ export class ModbusRtuService {
         }
       },
       5,
-      () => this.connectionSessionId !== currentSession
+      () => this.connectionSessionId !== currentSession,
+      { command: `DIAG_READ_REG (${params.type})`, readWrite: 'READ', fc: params.type === 'COIL' ? 'FC01' : 'FC03', address: params.address },
+      currentSession
     );
   }
 
@@ -767,7 +1062,9 @@ export class ModbusRtuService {
         }
       },
       5,
-      () => this.connectionSessionId !== currentSession
+      () => this.connectionSessionId !== currentSession,
+      { command: `DIAG_WRITE_REG (${params.type})`, readWrite: 'WRITE', fc: params.type === 'COIL' ? 'FC05' : (params.type === 'FLOAT' ? 'FC16' : 'FC06'), address: params.address },
+      currentSession
     );
   }
 
@@ -777,6 +1074,10 @@ export class ModbusRtuService {
     registers?: Record<string, { value: number | boolean; formatted: string }>;
     error?: string;
   }> {
+    if (this.inFlightDiagReadAll) {
+      return this.inFlightDiagReadAll;
+    }
+
     if (this.settings.isSimulator || !this.modbusClient || !this.modbusClient.isOpen) {
       if (this.settings.isSimulator) {
         const modeMap: Record<OperationMode, number> = { CV: 6, CC: 7, CR: 8, CP: 9, 'BAT TEST': 14 };
@@ -810,7 +1111,7 @@ export class ModbusRtuService {
     }
 
     const currentSession = this.connectionSessionId;
-    return this.serialLock.runExclusive(
+    const diagPromise = this.serialLock.runExclusive(
       async () => {
         if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
           return { success: false, error: 'Connection closed' };
@@ -841,11 +1142,21 @@ export class ModbusRtuService {
           // Fallback: Read in individual registers if slave controller does not support 16-register block reads
           console.warn('[RS485 Diag Read All] Block read failed, falling back to safe individual reads:', blockErr);
           const allHolding: number[] = [];
+          let consecutiveFailures = 0;
           for (let i = 0; i < 31; i++) {
+            if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+              throw new Error('Connection closed during individual read fallback');
+            }
             try {
               const single = await this.modbusClient!.readHoldingRegisters(baseH + i, 1);
               allHolding.push(single.data[0]);
-            } catch {
+              consecutiveFailures = 0;
+            } catch (singleErr) {
+              consecutiveFailures++;
+              if (consecutiveFailures >= 2) {
+                console.warn(`[RS485 Diag Read All] Aborting fallback: ${consecutiveFailures} consecutive register reads failed at addr=${baseH + i}`);
+                throw new Error(`Diagnostic fallback aborted after 2 consecutive failures: ${singleErr instanceof Error ? singleErr.message : String(singleErr)}`);
+              }
               allHolding.push(0);
             }
             await new Promise((r) => setTimeout(r, 10));
@@ -940,7 +1251,15 @@ export class ModbusRtuService {
         console.error('[RS485 Diag Read All Error]:', errMsg);
         return { success: false, error: errMsg };
       }
-    }, 5, () => this.connectionSessionId !== currentSession);
+    }, 5, () => this.connectionSessionId !== currentSession, { command: 'DIAG_READ_ALL', readWrite: 'READ', fc: 'FC03/FC01', address: '0..30' }, currentSession)
+    .finally(() => {
+      if (this.inFlightDiagReadAll === diagPromise) {
+        this.inFlightDiagReadAll = null;
+      }
+    });
+
+    this.inFlightDiagReadAll = diagPromise;
+    return diagPromise;
   }
 
   // Backend Limit Enforcement & Setpoint Sanitization
@@ -1163,7 +1482,7 @@ export class ModbusRtuService {
           this.isCommFault = true;
           return { success: false, error: this.formatModbusError('RS485 Setpoint Write', err) };
         }
-      }, 5, () => this.connectionSessionId !== currentSession);
+      }, 5, () => this.connectionSessionId !== currentSession, { command: `WRITE_SETPOINT (${Object.keys(newSetpoints).join(',')})`, readWrite: 'WRITE', fc: 'FC16', address: Object.keys(newSetpoints).join(',') }, currentSession);
       if (res.success) {
         this.scheduleNextPoll(10);
       }
@@ -1174,6 +1493,12 @@ export class ModbusRtuService {
   }
 
   public async writeEngSettings(newEng: Partial<EngineeringSettings>): Promise<{ success: boolean; error?: string }> {
+    // OPERATOR LOCK BACKEND GUARD: Block safety limit / engineering changes when physical Output is ON
+    if (this.outputState) {
+      console.warn('[OPERATOR LOCK] Cannot modify Engineering Settings while physical Output is ON!');
+      return { success: false, error: 'Cannot modify Engineering Settings while Output is ON' };
+    }
+
     if (newEng.vmax !== undefined && newEng.vmax <= 0) {
       return { success: false, error: 'V_MAX must be greater than zero!' };
     }
@@ -1286,7 +1611,7 @@ export class ModbusRtuService {
           console.error('RS485 Eng Settings Write Error:', err);
           return { success: false, error: this.formatModbusError('RS485 Eng Settings Write', err) };
         }
-      });
+      }, 5, undefined, { command: `WRITE_ENG_SETTINGS (${Object.keys(newEng).join(',')})`, readWrite: 'WRITE', fc: 'FC16', address: 'limits' }, this.connectionSessionId);
       if (res.success) {
         this.scheduleNextPoll(10);
       }
@@ -1361,7 +1686,9 @@ export class ModbusRtuService {
           }
         },
         5,
-        () => this.connectionSessionId !== currentSession
+        () => this.connectionSessionId !== currentSession,
+        { command: `SET_OUTPUT (${state ? 'ON' : 'OFF'})`, readWrite: 'WRITE', fc: String(this.activeProfile.outputControlFc || 5), address: this.settings.registers.outputCoil ?? 0 },
+        currentSession
       );
 
       if (!res.success) {
@@ -1524,11 +1851,21 @@ export class ModbusRtuService {
           // Safe individual fallback if 16-register block is rejected by firmware
           console.warn('[RS485 Telemetry] Block read failed, fallback to individual reads:', blockErr);
           const allHolding: number[] = [];
+          let consecutiveFailures = 0;
           for (let i = 0; i < 31; i++) {
+            if (this.connectionSessionId !== currentSession || !this.modbusClient || !this.modbusClient.isOpen) {
+              throw new Error('Connection closed during telemetry individual read fallback');
+            }
             try {
               const single = await this.modbusClient.readHoldingRegisters(baseH + i, 1);
               allHolding.push(single.data[0]);
-            } catch {
+              consecutiveFailures = 0;
+            } catch (singleErr) {
+              consecutiveFailures++;
+              if (consecutiveFailures >= 2) {
+                console.warn(`[RS485 Telemetry] Aborting fallback: ${consecutiveFailures} consecutive register reads failed at addr=${baseH + i}`);
+                throw new Error(`Telemetry fallback aborted after 2 consecutive failures: ${singleErr instanceof Error ? singleErr.message : String(singleErr)}`);
+              }
               allHolding.push(0);
             }
             await new Promise((r) => setTimeout(r, 5));
@@ -1575,6 +1912,9 @@ export class ModbusRtuService {
           console.log(`[RS485 HMI Sync] Hardware Output changed on HMI to: ${hwOutputState ? 'ON' : 'OFF'}`);
           this.outputState = hwOutputState;
           this.outputConfirmedState = hwOutputState ? 'ON' : 'OFF';
+          if (!hwOutputState && this.currentMode === 'BAT TEST') {
+            this.batTestStartTime = null;
+          }
         }
 
         // Sync Submode
@@ -1644,11 +1984,6 @@ export class ModbusRtuService {
         this.consecutiveErrors = 0;
         this.isCommFault = false;
 
-        // Battery Test Hardware Safety Cutoff Check
-        if (this.outputState && this.currentMode === 'BAT TEST' && vmon <= this.setpoints.cutoffV) {
-          await this.setOutput(false);
-        }
-
         return {
           timestamp: timeStr,
           timeSeconds: timeSec,
@@ -1678,7 +2013,8 @@ export class ModbusRtuService {
           hardwareMin,
           hardwareBatSubMode: batSubMode,
           isStale: false,
-          deviceResponding: true
+          deviceResponding: true,
+          _debugMainTimestamp: Date.now()
         };
       } catch (err: any) {
         this.consecutiveErrors++;
@@ -1698,7 +2034,7 @@ export class ModbusRtuService {
 
         return null;
       }
-    }, 5, () => this.connectionSessionId !== currentSession);
+    }, 5, () => this.connectionSessionId !== currentSession, { command: 'POLL_TELEMETRY', readWrite: 'READ', fc: 'FC03/FC01', address: '0..30' }, currentSession);
     } catch (err: any) {
       if (err?.message === 'OPERATION_CANCELLED_CONNECTION_CHANGED') return null;
       throw err;

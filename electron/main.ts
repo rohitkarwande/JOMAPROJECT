@@ -91,6 +91,7 @@ app.whenReady().then(() => {
   // Setup Modbus telemetry listener
   modbusService.setTelemetryCallback((point) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      point._debugIpcSentTimestamp = Date.now();
       mainWindow.webContents.send('modbus:telemetry', point);
     }
   });
